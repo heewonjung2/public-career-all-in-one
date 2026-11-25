@@ -31,7 +31,6 @@ COMPANIES = [
      "data_status": "공식 공고 미등록 - 분석 데이터 없음"},
 ]
 
-MAIN_RID = "korail-2026H1-it"
 RULES: dict[str, dict] = {}
 VALIDATION: dict[str, dict] = {}
 
@@ -64,12 +63,63 @@ def startup() -> None:
                       (dumps({"email": "", "consent": False, "times": ["09:00", "18:00"], "timezone": "Asia/Seoul", "companies": ["korail"]}),))
 
 
+LANG_FIELDS = ("exam_type", "score", "grade", "exam_date", "result_date", "original_expiry_date",
+               "preregistration_status", "preregistration_date", "preregistration_expiry_date", "verification_status")
+
+
+def migrate_profile(p: dict) -> dict:
+    """구 스키마 → 신 스키마. 의미가 불명확한 날짜는 변환하지 않고 legacy_date 로 보존 + 확인 필요 표시."""
+    langs = []
+    for l in p.get("languages", []) or []:
+        n = {k: l.get(k, "") for k in LANG_FIELDS}
+        n["test"] = l.get("test") or l.get("exam_type") or ""
+        n["exam_type"] = n["exam_type"] or n["test"]
+        n["score"] = l.get("score", "")
+        n["preregistration_status"] = l.get("preregistration_status") or "미등록"
+        if l.get("taken_at") and not l.get("exam_date"):
+            n["legacy_date"] = l["taken_at"]
+            n["verification_status"] = "날짜 의미 확인 필요(응시일인지 만료일인지 불명확)"
+        elif l.get("legacy_date"):
+            n["legacy_date"] = l["legacy_date"]
+        n["verification_status"] = n.get("verification_status") or "사용자 입력"
+        langs.append(n)
+    p["languages"] = langs
+    certs = []
+    for c in p.get("certificates", []) or []:
+        c = dict(c)
+        c.setdefault("issuer", "")
+        c.setdefault("has_validity", bool(c.get("expires_at")))
+        c.setdefault("renewal_required", False)
+        certs.append(c)
+    p["certificates"] = certs
+    p["schema_version"] = 2
+    return p
+
+
 def get_profile() -> dict:
     with connect() as c:
         row = c.execute("SELECT data, updated_at FROM profile WHERE id=1").fetchone()
-    p = loads(row["data"])
+    p = migrate_profile(loads(row["data"]))
     p["_updated_at"] = row["updated_at"]
     return p
+
+
+def _target_year(p: dict) -> int | None:
+    m = re.search(r"(20\d\d)", str(p.get("target_year") or p.get("target_period") or ""))
+    return int(m.group(1)) if m else None
+
+
+def active_rid(p: dict | None = None) -> str | None:
+    """모든 기능이 공유하는 '현재 분석 기준(공고 버전)'. 프로필에 저장된 값 → 목표 연도 기본값 → 첫 분석 가능 공고."""
+    p = p or get_profile()
+    rid = p.get("active_recruitment_id")
+    if rid in RULES and RULES[rid].get("analysis_supported", True):
+        return rid
+    ty = _target_year(p)
+    cands = sorted([r for r in RULES.values() if r.get("analysis_supported", True)],
+                   key=lambda r: (r.get("target_year", r.get("recruitment_year")) or 0, r.get("published_at") or ""))
+    same = [r for r in cands if r.get("target_year", r.get("recruitment_year")) == ty]
+    return (same or cands or [{}])[-1].get("id")
 
 
 def summary(rule: dict) -> dict:
@@ -256,7 +306,7 @@ def ai_extract(doc_id: int, job_category: str | None = None):
 
 # ------------------------------------------------------------------ 분석
 class AnalysisReq(BaseModel):
-    recruitment_id: str
+    recruitment_id: str | None = None
 
 
 def _analysis(rid: str, extra: list[dict] | None = None) -> dict:
@@ -294,7 +344,7 @@ def _analysis(rid: str, extra: list[dict] | None = None) -> dict:
 
 @app.post("/api/analysis")
 def analysis(req: AnalysisReq):
-    return _analysis(req.recruitment_id)
+    return _analysis(req.recruitment_id or active_rid())
 
 
 @app.get("/api/rule-versions/{company_id}")
@@ -310,18 +360,18 @@ def rule_versions(company_id: str):
         out.append({"recruitment_id": r["id"], "title": r["recruitment_title"], "type": r.get("rule_version_type", "확정 채용공고"),
                     "year": r.get("target_year", r.get("recruitment_year")), "published_at": r.get("published_at"), "status_note": r.get("status_note")})
     out.sort(key=lambda x: (x["year"] or 0, x["published_at"] or ""))
-    default = next((x["recruitment_id"] for x in reversed(out) if x["year"] == target), out[-1]["recruitment_id"] if out else None)
+    default = active_rid(p)
     return {"versions": out, "default": default, "target_year": target}
 
 
 class SimReq(BaseModel):
-    recruitment_id: str
+    recruitment_id: str | None = None
     add_certificates: list[dict] = []
 
 
 @app.post("/api/simulate")
 def simulate(req: SimReq):
-    rule = RULES.get(req.recruitment_id)
+    rule = RULES.get(req.recruitment_id or active_rid())
     if not rule:
         raise HTTPException(404)
     p = get_profile()
@@ -348,19 +398,22 @@ def sim_options(rid: str):
 
 # ------------------------------------------------------------------ 로드맵
 class RoadmapReq(BaseModel):
-    recruitment_id: str
+    recruitment_id: str | None = None
     weeks: int = 8
 
 
 @app.post("/api/roadmaps")
 def create_roadmap(req: RoadmapReq):
-    rule = RULES.get(req.recruitment_id)
-    if not rule or not rule.get("written_exam"):
-        raise HTTPException(400, "필기시험 정보가 검증된 공고에서만 로드맵을 생성할 수 있습니다")
+    rid_ = req.recruitment_id or active_rid()
+    rule = RULES.get(rid_)
+    if not rule or not (rule.get("written_exam") or rule.get("written_exam_reference")):
+        raise HTTPException(400, "필기시험 정보가 있는 공고에서만 로드맵을 생성할 수 있습니다")
     rm = roadmap.generate_rule_based(rule, get_profile(), max(1, min(req.weeks, 8)))
+    if not rule.get("written_exam"):
+        rm["label"] = "규칙 기반 추천 · 필기 범위는 과거 공고(2026 상반기) 참고 — 2027 최종 공고 확인 필요"
     with connect() as c:
         cur = c.execute("INSERT INTO roadmaps (recruitment_id, data, created_at) VALUES (?,?,?)",
-                        (req.recruitment_id, dumps(rm), now()))
+                        (rid_, dumps(rm), now()))
         rid = cur.lastrowid
         for w in rm["weeks"]:
             for t in w["tasks"]:
@@ -474,12 +527,43 @@ def put_notify(body: dict):
 
 # ================================================================== 고도화 1: 통합 취업 전략
 def _rules_by_company() -> dict[str, dict]:
-    """기업별 분석 가능한 최신 검증 공고 1건 (사용자 직렬과 일치하는 공고만)."""
+    """기업별 분석 공고: 현재 분석 기준(active)이 속한 기업은 그 버전, 목표에 공고 ID가 지정되면 그 버전, 그 외 최신 검증 공고."""
+    p = get_profile()
+    act = active_rid(p)
     out = {}
+    for t in p.get("targets", []) or []:
+        if t.get("recruitment_id") in RULES:
+            out[t["company_id"]] = RULES[t["recruitment_id"]]
+    if act:
+        out[RULES[act]["company_id"]] = RULES[act]
     for r in RULES.values():
         if r.get("analysis_supported", True) and r["official_source"].get("verification_status") in ("verified",):
             out.setdefault(r["company_id"], r)
     return out
+
+
+class ActiveReq(BaseModel):
+    recruitment_id: str
+
+
+@app.get("/api/active")
+def get_active():
+    rid = active_rid()
+    r = RULES.get(rid, {})
+    return {"recruitment_id": rid, "company_id": r.get("company_id"), "company": r.get("company"), "job_category": r.get("job_category"),
+            "title": r.get("recruitment_title"), "type": r.get("rule_version_type", "확정 채용공고"), "year": r.get("target_year", r.get("recruitment_year"))}
+
+
+@app.put("/api/active")
+def set_active(req: ActiveReq):
+    if req.recruitment_id not in RULES:
+        raise HTTPException(404, "공고 없음")
+    p = get_profile()
+    p.pop("_updated_at", None)
+    p["active_recruitment_id"] = req.recruitment_id
+    with connect() as c:
+        c.execute("UPDATE profile SET data=?, updated_at=? WHERE id=1", (dumps(p), now()))
+    return get_active()
 
 
 class StrategyReq(BaseModel):
@@ -574,7 +658,8 @@ def documents_index():
 
 
 @app.get("/api/documents/search")
-def documents_search(q: str, recruitment_id: str = MAIN_RID, k: int = 5):
+def documents_search(q: str, recruitment_id: str | None = None, k: int = 5):
+    recruitment_id = recruitment_id or active_rid()
     if recruitment_id not in RULES:
         raise HTTPException(404)
     with connect() as c:
@@ -584,7 +669,7 @@ def documents_search(q: str, recruitment_id: str = MAIN_RID, k: int = 5):
 @app.get("/api/chat/sources")
 def chat_sources():
     return [{"recruitment_id": r["id"], "company": r["company"], "job_category": r["job_category"], "title": r["recruitment_title"],
-             "published_at": r.get("published_at"), "status_note": r.get("status_note"), "default": r["id"] == MAIN_RID}
+             "published_at": r.get("published_at"), "status_note": r.get("status_note"), "default": r["id"] == active_rid()}
             for r in RULES.values() if r["official_source"].get("verification_status") == "verified"]
 
 
@@ -597,7 +682,7 @@ def chat_ask(req: ChatReq):
         raise HTTPException(400, "질문을 입력하세요")
     mentioned = rag.detect_companies(q)
     names = {c["id"]: c["name"] for c in COMPANIES}
-    rid = req.recruitment_id or MAIN_RID
+    rid = req.recruitment_id or active_rid()
     if not req.recruitment_id and "하반기" in q:
         rid = "korail-2026H2-general"
     p = get_profile()

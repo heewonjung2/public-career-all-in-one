@@ -52,7 +52,7 @@ def _priority(status: str) -> int:
 
 
 def generate_rule_based(rec: dict, profile: dict, weeks: int = 8) -> dict:
-    we = rec.get("written_exam") or {}
+    we = rec.get("written_exam") or rec.get("written_exam_reference") or {}
     ncs = profile.get("ncs_status", {}) or {}
     major = profile.get("major_status", {}) or {}
     if not major.get("전자계산기") and major.get("컴퓨터구조"):

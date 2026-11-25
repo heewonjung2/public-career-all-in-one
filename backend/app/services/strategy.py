@@ -51,7 +51,7 @@ def subject_matrix(rules: list[dict], profile: dict) -> list[dict]:
         major["전자계산기"] = major["컴퓨터구조"]
     rows: dict[str, dict] = {}
     for r in rules:
-        we = r.get("written_exam") or {}
+        we = r.get("written_exam") or r.get("written_exam_reference") or {}
         comp = we.get("composition", {})
         total = we.get("question_count") or 1
         groups = [("NCS", we.get("ncs_subjects", []), comp.get("NCS", 0)),

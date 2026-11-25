@@ -212,6 +212,7 @@ def remap(o):
     return o
 
 
+rule["written_exam_reference"] = dict(remap(old["written_exam"]), source="2026 상반기 확정 공고(과거 참고) — 2027 사전예고에는 필기 구성 언급 없음")
 rule["score_policy"] = remap(rule["score_policy"])
 rule["cert_catalog"] = remap(rule["cert_catalog"])
 rule["documents"]["ref2026_notice"] = dict(old["documents"]["notice"], name="[과거 참고] " + old["documents"]["notice"]["name"])
