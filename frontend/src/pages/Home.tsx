@@ -177,7 +177,7 @@ export default function Home() {
                 </div>
                 <p className="mt-2.5 text-[11.5px] leading-snug text-sub">{st.metric} 기준 · 고정 시드로 만든 가상 준비생과의 비교이며 실제 지원자 순위·합격 가능성이 아니에요.</p>
               </div>
-            ) : <div className="py-10 text-center text-[14px] text-sub">{primaryHasRules ? '분석 기준을 불러오는 중이에요' : `${primaryName}: 가점 분석 준비 중 — 검증된 가점 규칙이 생기면 비교할 수 있어요`}</div>}
+            ) : <div className="py-10 text-center text-[14px] text-sub">{primaryHasRules ? '분석 기준을 불러오는 중이에요' : `${dispName(primaryName)}: 가점 분석 준비 중 — 검증된 가점 규칙이 생기면 비교할 수 있어요`}</div>}
           </section>
 
           <section className="rounded-[20px] bg-sage px-6 py-6">
@@ -190,7 +190,7 @@ export default function Home() {
                 {gaps > 0 && <li className="flex items-start gap-2.5"><AlertCircle size={19} className="mt-0.5 shrink-0 text-butter-ink" />확인할 조건 {gaps}건</li>}
                 {ds?.available && ds.language_points_if_valid != null && <li className="flex items-start gap-2.5"><AlertCircle size={19} className="mt-0.5 shrink-0 text-butter-ink" />어학 응시일 입력 필요</li>}
               </ul>
-            ) : <div className="py-6 text-[14px] text-sub">{primaryHasRules ? '분석 중' : `${primaryName}은(는) 가점 분석 준비 중이에요. 공식 공고 확인과 학습 로드맵은 이용할 수 있어요.`}</div>}
+            ) : <div className="py-6 text-[14px] text-sub">{primaryHasRules ? '분석 중' : `${dispName(primaryName)}은(는) 가점 분석 준비 중이에요. 공식 공고 확인과 학습 로드맵은 이용할 수 있어요.`}</div>}
             <Link to="/roadmap" className="mt-5 flex items-center justify-center gap-1.5 rounded-xl border border-[#BFE3CC] bg-white px-4 py-2.5 text-[14px] font-medium text-sage-ink hover:bg-[#f6fbf8]">준비 로드맵 보기 <ArrowRight size={15} /></Link>
           </section>
         </div>
