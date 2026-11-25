@@ -19,6 +19,42 @@ from .services.evidence_validator import page_text, validate_rulefile
 app = FastAPI(title="공기업 All-in-One API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# ---- 유료 AI 호출 경로 사용량 제한(공개 배포 대비): IP당·전체 시간당 한도 ----
+import os as _os  # noqa: E402
+import time as _time  # noqa: E402
+from collections import defaultdict, deque  # noqa: E402
+
+from fastapi import Request  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+
+AI_PATHS = ("/api/chat/ask", "/api/search/postings", "/api/postings/analyze")
+AI_LIMIT_IP = int(_os.environ.get("AI_LIMIT_PER_IP_HOUR", "20"))
+AI_LIMIT_ALL = int(_os.environ.get("AI_LIMIT_TOTAL_HOUR", "200"))
+_hits: dict[str, deque] = defaultdict(deque)
+
+
+@app.middleware("http")
+async def ai_rate_limit(request: Request, call_next):
+    path = request.url.path
+    if request.method == "POST" and (path in AI_PATHS or path.endswith("/ai-extract")):
+        now_ = _time.time()
+        ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")).split(",")[0].strip()
+        for key, limit in ((ip, AI_LIMIT_IP), ("__all__", AI_LIMIT_ALL)):
+            q = _hits[key]
+            while q and now_ - q[0] > 3600:
+                q.popleft()
+            if len(q) >= limit:
+                return JSONResponse({"detail": "AI 기능 사용량 한도(시간당)를 초과했습니다. 잠시 후 다시 시도해 주세요."}, status_code=429)
+        _hits[ip].append(now_)
+        _hits["__all__"].append(now_)
+    return await call_next(request)
+
+
+@app.get("/api/meta")
+def meta():
+    return {"public_demo": _os.environ.get("PUBLIC_DEMO") == "1", "ai_enabled": ai_analyzer.ai_available(),
+            "notice": "공개 시연 서버입니다. 입력한 스펙은 다른 방문자와 공유될 수 있으니 실제 개인정보를 입력하지 마세요." if _os.environ.get("PUBLIC_DEMO") == "1" else None}
+
 COMPANIES = [
     {"id": "korail", "name": "한국철도공사", "short": "KORAIL", "official_site": "https://www.korail.com",
      "recruit_info": "JOB-ALIO 공공기관 채용정보시스템", "allowed_domains": source_verifier.allowed_domains("korail"),
