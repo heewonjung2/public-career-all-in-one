@@ -15,7 +15,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 # 공통 공식 채용정보 시스템 (공공기관 공식)
-COMMON_OFFICIAL_DOMAINS = ["job.alio.go.kr", "www.alio.go.kr", "alio.go.kr"]
+COMMON_OFFICIAL_DOMAINS = ["job.alio.go.kr", "www.alio.go.kr", "alio.go.kr", "job.cleaneye.go.kr"]
 
 # 기업별 공식 도메인. 외부 채용대행 사이트는 공식 홈페이지에서 연결이 확인된 경우에만 추가한다.
 COMPANY_DOMAINS: dict[str, list[str]] = {

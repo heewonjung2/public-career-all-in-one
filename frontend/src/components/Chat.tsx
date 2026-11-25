@@ -19,13 +19,13 @@ const MODE: Record<string, string> = {
 export default function Chat() {
   const [open, setOpen] = useState(false)
   const [sources, setSources] = useState<any[]>([])
-  const [rid, setRid] = useState('korail-2026H1-it')
+  const [rid, setRid] = useState('')
   const [msgs, setMsgs] = useState<any[]>(() => { try { return JSON.parse(sessionStorage.getItem(KEY) || '[]') } catch { return [] } })
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const end = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { if (open && !sources.length) api<any[]>('/chat/sources').then(setSources).catch(() => {}) }, [open, sources.length])
+  useEffect(() => { if (open) { api<any[]>('/chat/sources').then(setSources).catch(() => {}); api<any>('/active').then((a) => a.recruitment_id && setRid(a.recruitment_id)).catch(() => {}) } }, [open])
   useEffect(() => { try { sessionStorage.setItem(KEY, JSON.stringify(msgs)) } catch { /* ignore */ } end.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
 
   const ask = async (text: string) => {

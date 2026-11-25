@@ -383,6 +383,41 @@ def analysis(req: AnalysisReq):
     return _analysis(req.recruitment_id or active_rid())
 
 
+class SearchReq(BaseModel):
+    q: str
+
+
+class AnalyzeReq(BaseModel):
+    url: str
+
+
+@app.post("/api/search/postings")
+def search_postings(req: SearchReq):
+    from .services import posting_search
+    try:
+        with connect() as c:
+            return posting_search.search(c, req.q)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        return {"query": req.q, "results": [], "status": "검색 실패", "message": str(e)}
+
+
+@app.post("/api/postings/analyze")
+def analyze_posting(req: AnalyzeReq):
+    from .services import posting_search
+    v = source_verifier.verify_url(req.url, None)
+    if not v.ok or not any(source_verifier._host_matches(v.host, d) for d in posting_search.SEARCH_DOMAINS):
+        raise HTTPException(400, f"공식 채용정보 사이트 URL이 아닙니다: {v.reason}")
+    try:
+        with connect() as c:
+            return posting_search.analyze(c, req.url, _store_document)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001
+        return {"url": req.url, "status": "분석 실패", "message": f"{e.__class__.__name__}: {str(e)[:150]}", "stages": []}
+
+
 @app.get("/api/stats/position")
 def stats_position(recruitment_id: str | None = None):
     from .services import stats
@@ -441,8 +476,10 @@ def simulate(req: SimReq):
             "delta_with_interpretation": round(new["total_with_interpretation"] - base["total_with_interpretation"], 1)}
 
 
+@app.get("/api/simulate/options")
 @app.get("/api/simulate/options/{rid}")
-def sim_options(rid: str):
+def sim_options(rid: str | None = None):
+    rid = rid or active_rid()
     rule = RULES.get(rid)
     if not rule:
         raise HTTPException(404)

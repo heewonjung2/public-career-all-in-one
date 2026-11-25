@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ArrowUpRight, Plus, X } from 'lucide-react'
-import { api, MAIN_RID } from '../api'
+import { api } from '../api'
 import { ErrorBox, EvidenceToggle, Loading, Note, Section, Sheet, Status, Tabs, btnLine, btnPrimary, input, useApi } from '../components/ui'
 
 export default function Spec() {
@@ -23,7 +23,7 @@ function Analysis() {
   const [err, setErr] = useState<string | null>(null)
   const [vers, setVers] = useState<any>(null)
   const [rid0, setRid] = useState<string | null>(null)
-  useEffect(() => { api('/rule-versions/korail').then((v) => { setVers(v); setRid(v.default || MAIN_RID) }).catch(() => setRid(MAIN_RID)) }, [])
+  useEffect(() => { api('/rule-versions/korail').then((v) => { setVers(v); setRid(v.default) }).catch((e) => setErr(e.message)) }, [])
   useEffect(() => { if (rid0) { setA(null); api('/analysis', { method: 'POST', json: { recruitment_id: rid0 } }).then(setA).catch((e) => setErr(e.message)) } }, [rid0])
   if (err) return <ErrorBox error={err} />
   if (!a) return <Loading text="공식 공고 기준으로 분석 중" />
@@ -40,7 +40,7 @@ function Analysis() {
             <div className="mb-5 flex flex-wrap items-center gap-2">
               <span className="text-[13px] text-sub">분석 기준</span>
               {vers.versions.map((v: any) => (
-                <button key={v.recruitment_id} onClick={() => setRid(v.recruitment_id)}
+                <button key={v.recruitment_id} onClick={async () => { await api('/active', { method: 'PUT', json: { recruitment_id: v.recruitment_id } }); setRid(v.recruitment_id) }}
                   className={`rounded-full px-4 py-1.5 text-[13.5px] ${v.recruitment_id === rid ? 'bg-accent text-white' : 'bg-white hover:bg-lav'}`}>
                   {v.year} {v.type === '사전예고' ? '사전예고' : '확정 공고'}{v.year === vers.target_year ? ' · 목표 연도' : ''}
                 </button>
@@ -188,14 +188,14 @@ function Analysis() {
 
 /* ------------------------------------------------ 시뮬레이터 */
 function Simulator() {
-  const opts = useApi<any[]>(`/simulate/options/${MAIN_RID}`)
+  const opts = useApi<any[]>(`/simulate/options`)
   const [sel, setSel] = useState<string[]>([])
   const [res, setRes] = useState<any>(null)
   const key = (o: any) => `${o.name}|${o.grade}`
   useEffect(() => {
     if (!opts.data) return
     const add = opts.data.filter((o) => sel.includes(key(o))).map((o) => ({ name: o.name, grade: o.grade }))
-    api('/simulate', { method: 'POST', json: { recruitment_id: MAIN_RID, add_certificates: add } }).then(setRes).catch(() => {})
+    api('/simulate', { method: 'POST', json: { add_certificates: add } }).then(setRes).catch(() => {})
   }, [sel, opts.data])
   if (!opts.data || !res) return <Loading />
   return (

@@ -16,4 +16,3 @@ export async function api<T = any>(path: string, opts: RequestInit & { json?: un
   return res.json()
 }
 
-export const MAIN_RID = 'korail-2026H1-it'

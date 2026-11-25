@@ -1,33 +1,108 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ArrowUpRight, RefreshCw, Upload } from 'lucide-react'
-import { api, MAIN_RID } from '../api'
+import { api } from '../api'
 import { Empty, ErrorBox, EvidenceToggle, Loading, Note, Section, Sheet, Status, Tabs, btnLine, btnPrimary, btnSoft, input, link, useApi } from '../components/ui'
+
+function CompanySearch() {
+  const [q, setQ] = useState('')
+  const [res, setRes] = useState<any>(null)
+  const [busy, setBusy] = useState(false)
+  const [an, setAn] = useState<Record<string, any>>({})
+  const [anBusy, setAnBusy] = useState<string | null>(null)
+  const go = async (e?: any) => {
+    e?.preventDefault(); if (!q.trim()) return
+    setBusy(true); setRes(null)
+    try { setRes(await api('/search/postings', { method: 'POST', json: { q } })) } catch (er: any) { setRes({ status: '검색 실패', message: er.message, results: [] }) } finally { setBusy(false) }
+  }
+  const analyze = async (url: string) => {
+    setAnBusy(url)
+    try { const r = await api('/postings/analyze', { method: 'POST', json: { url } }); setAn((m) => ({ ...m, [url]: r })) }
+    catch (er: any) { setAn((m) => ({ ...m, [url]: { status: '분석 실패', message: er.message, stages: [] } })) } finally { setAnBusy(null) }
+  }
+  return (
+    <section className="card mb-8 px-7 py-6">
+      <h1 className="text-[22px] font-bold">공공기관 채용공고 검색</h1>
+      <p className="mt-1 text-[13.5px] text-sub">JOB-ALIO·ALIO·클린아이 공식 사이트에서 찾고, 실제 공고 페이지를 열어 기관명·제목을 다시 확인해요.</p>
+      <form onSubmit={go} className="mt-4 flex gap-2">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="기관명을 입력하세요 (예: 한국수자원공사, 인천교통공사)" className={`${input} !py-3 !text-[15px]`} />
+        <button className={`${btnPrimary} !rounded-xl !px-6`} disabled={busy || !q.trim()}>{busy ? '검색 중…' : '검색'}</button>
+      </form>
+      {busy && <p className="mt-3 text-[13px] text-sub">공식 사이트를 검색하고 각 공고 페이지를 확인하는 중이에요. 1분 정도 걸릴 수 있어요.</p>}
+      {res && (
+        <div className="mt-5">
+          <div className="mb-2 text-[13px] text-sub">{res.status}{res.cached ? ' · 저장된 검색 결과' : ''}{res.elapsed_s ? ` · ${res.elapsed_s}초` : ''}</div>
+          {res.message && <Note>{res.message}</Note>}
+          <div className="divide-y divide-line">
+            {res.results.map((r: any) => {
+              const a = an[r.url]
+              return (
+                <div key={r.url} className="py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-lav text-[12px] font-bold text-accent-ink">{(r.org || r.ai_org || '?').replace(/한국|공사|공단/g, '').slice(0, 2)}</span>
+                      <div>
+                        <div className="text-[13px] text-sub">{r.org || r.ai_org || '기관 확인 필요'} · <span className={r.status === '공식 출처 검증 완료' ? 'text-sage-ink' : 'text-butter-ink'}>{r.status}</span></div>
+                        <div className="text-[15px] font-semibold">{r.title || r.ai_title || '제목 확인 필요'}</div>
+                        {r.attachments?.length > 0 && <div className="text-[12px] text-sub">첨부: {r.attachments.map((x: any) => x.name).join(', ')}</div>}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <a href={r.url} target="_blank" rel="noreferrer" className={btnLine}>공식 원문 <ArrowUpRight size={13} /></a>
+                      <button className={btnSoft} disabled={anBusy === r.url} onClick={() => analyze(r.url)}>{anBusy === r.url ? '분석 중…' : '공고 분석'}</button>
+                    </div>
+                  </div>
+                  {a && (
+                    <div className="mt-3 rounded-2xl bg-[#F8F7FC] px-5 py-4 text-[13.5px]">
+                      <div className="font-semibold">{a.status}</div>
+                      {a.message && <div className="mt-1 text-sub">{a.message}</div>}
+                      <ol className="mt-2 space-y-0.5 text-[12.5px] text-sub">{(a.stages || []).map((s: any, i: number) => <li key={i}>✓ {s.stage} — {s.detail}</li>)}</ol>
+                      {a.extraction && (
+                        <div className="mt-3 grid gap-4 md:grid-cols-2">
+                          <div><div className="mb-1 text-[12.5px] font-semibold">모집 직렬(AI 추출)</div><ul className="space-y-0.5">{a.extraction.job_categories.slice(0, 12).map((j: string, i: number) => <li key={i}>· {j}</li>)}</ul></div>
+                          <div><div className="mb-1 text-[12.5px] font-semibold">가점·우대(AI 추출 · 원문 대조)</div><ul className="space-y-0.5">{a.extraction.bonus_rules.slice(0, 10).map((b: any, i: number) => <li key={i}>· {b.item} {b.points ? `(${b.points})` : ''} <span className={b.evidence_verified ? 'text-sage-ink' : 'text-butter-ink'}>{b.evidence_verified ? `원문 일치 p.${b.evidence.page}` : '원문 불일치·확인 필요'}</span></li>)}</ul></div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <p className="mt-2 text-[12px] text-sub">{res.note}</p>
+        </div>
+      )}
+    </section>
+  )
+}
 
 export default function Jobs() {
   const [sp, setSp] = useSearchParams()
   const recs = useApi<any[]>('/recruitments')
-  const id = sp.get('id') || MAIN_RID
+  const act = useApi<any>('/active')
+  const id = sp.get('id') || act.data?.recruitment_id || ''
   const tab = sp.get('tab') || 'overview'
-  if (recs.loading) return <Loading />
+  if (recs.loading || act.loading) return <Loading />
   if (recs.error) return <ErrorBox error={recs.error} />
   const list = (recs.data || []).filter((r) => !r.user_document)
   const set = (k: string, v: string) => { const n = new URLSearchParams(sp); n.set(k, v); setSp(n) }
 
   return (
+    <>
+    <CompanySearch />
     <div className="grid gap-x-16 gap-y-10 lg:grid-cols-[300px_minmax(0,1fr)]">
       <aside>
-        <div className="mb-4 text-[13px] text-sub">공식 공고</div>
+        <div className="mb-4 text-[13px] text-sub">검증 완료 공고 (가점 계산 가능)</div>
         <div className="space-y-1">
           {list.map((r) => (
-            <button key={r.id} onClick={() => set('id', r.id)} className={`block w-full rounded-2xl px-4 py-3.5 text-left transition ${r.id === id ? 'bg-white' : 'hover:bg-white/60'}`}>
+            <button key={r.id} onClick={() => set('id', r.id)} className={`block w-full rounded-2xl px-4 py-3.5 text-left transition ${r.id === id ? 'card' : 'hover:bg-white'}`}>
               <div className="text-[12.5px] text-sub">{r.company} · {r.published_at}</div>
               <div className="mt-0.5 text-[14.5px] leading-snug">{r.recruitment_title}</div>
               <div className="mt-1 text-[12.5px] text-sub">{r.job_category} · {r.application_status}</div>
             </button>
           ))}
         </div>
-        <div className="mt-8 px-4 text-[12.5px] leading-relaxed text-sub">한국전력공사·서울교통공사는 공식 공고가 아직 등록되지 않았어요.</div>
+        <div className="mt-8 px-4 text-[12.5px] leading-relaxed text-sub">위 검색으로 찾은 다른 기관 공고는 AI 추출 후 검토가 필요해 아직 자동 가점 계산에 쓰이지 않아요.</div>
       </aside>
       <div>
         <Tabs tabs={[{ key: 'overview', label: '공고 개요' }, { key: 'changes', label: '변경 이력' }, { key: 'register', label: '원문 등록' }]} value={tab} onChange={(k) => set('tab', k)} />
@@ -36,6 +111,7 @@ export default function Jobs() {
         {tab === 'register' && <Register reload={recs.reload} />}
       </div>
     </div>
+    </>
   )
 }
 

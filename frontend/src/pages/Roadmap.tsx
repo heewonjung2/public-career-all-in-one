@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check } from 'lucide-react'
-import { api, MAIN_RID } from '../api'
+import { api } from '../api'
 import { Bar, Empty, ErrorBox, EvidenceToggle, Loading, Note, Section, Sheet, Status, Tabs, btnPrimary, btnSoft, useApi } from '../components/ui'
 
 export default function Roadmap() {
@@ -18,7 +18,7 @@ export default function Roadmap() {
 function Plan() {
   const rm = useApi<any>('/roadmaps')
   const [busy, setBusy] = useState(false)
-  const create = async () => { setBusy(true); try { rm.setData(await api('/roadmaps', { method: 'POST', json: { recruitment_id: MAIN_RID, weeks: 8 } })) } finally { setBusy(false) } }
+  const create = async () => { setBusy(true); try { rm.setData(await api('/roadmaps', { method: 'POST', json: { weeks: 8 } })) } finally { setBusy(false) } }
   const toggle = async (t: any) => rm.setData(await api(`/tasks/${t.id}`, { method: 'PATCH', json: { done: !t.done } }))
   if (rm.loading) return <Loading />
   if (rm.error) return <ErrorBox error={rm.error} />
@@ -190,7 +190,7 @@ function Strategy() {
                   <span>{e.key}{e.selected && <span className="ml-2 text-[12.5px] text-accent-ink">추천</span>}<div className="text-[12px] text-sub">{e.category} · {e.cert_grade}</div></span>
                   <span>+{e.detail[0]?.gain}점<div className="text-[12px] text-sub">{e.companies_benefit}개 기업</div></span>
                   <span>{e.prep_hours}시간<div className="text-[12px] text-sub">{e.prep_hours_is_estimate ? '일반 추정치' : '입력값'}</div></span>
-                  <span className="text-[12.5px] text-sub">{e.fee_note}<div><EvidenceToggle rid={MAIN_RID} ev={e.evidence} /></div></span>
+                  <span className="text-[12.5px] text-sub">{e.fee_note}<div><EvidenceToggle rid={res.companies[0]?.recruitment_id} ev={e.evidence} /></div></span>
                 </div>
               ))}
               {res.certificates.efficiency.length === 0 && <p className="py-4 text-[14px] text-sub">현재 설정에서 가점을 늘릴 수 있는 자격증이 없어요.</p>}
