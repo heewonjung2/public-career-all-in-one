@@ -347,6 +347,27 @@ def analysis(req: AnalysisReq):
     return _analysis(req.recruitment_id or active_rid())
 
 
+@app.get("/api/stats/position")
+def stats_position(recruitment_id: str | None = None):
+    from .services import stats
+    rid = recruitment_id or active_rid()
+    rule = RULES.get(rid)
+    if not rule:
+        raise HTTPException(404)
+    p = get_profile()
+    ds = screening.document_score(rule, p)
+    if ds.get("available"):
+        mine = ds["total_if_language_valid"] if ds.get("total_if_language_valid") is not None else ds["total"]
+        res = stats.position(rule, mine, "서류 점수(어학+자격증)", 100)
+        res["conditional"] = ds.get("total_if_language_valid") is not None
+    else:
+        b = engine.calculate_bonus(rule, p)
+        res = stats.position(rule, b.get("total_confirmed"), "자격증 가점", (rule.get("score_policy") or {}).get("cert_total_cap") or 20)
+        res["conditional"] = False
+    res["recruitment_id"] = rid
+    return res
+
+
 @app.get("/api/rule-versions/{company_id}")
 def rule_versions(company_id: str):
     """분석 기준(채용 규칙 버전) 목록. 프로필 목표 연도와 같은 버전을 기본값으로 표시."""

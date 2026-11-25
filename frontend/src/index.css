@@ -2,24 +2,26 @@
 
 @theme {
   --font-sans: "Pretendard", system-ui, -apple-system, "Malgun Gothic", sans-serif;
-  --color-bg: #FAF9F6;
-  --color-ink: #292929;
-  --color-sub: #858585;
-  --color-line: #EEECE8;
-  --color-accent: #A59BE7;
-  --color-accent-ink: #6E61C8;
-  --color-lav: #F0EDFC;
-  --color-sage: #E3EFE6;
-  --color-sage-ink: #4F8A5B;
-  --color-butter: #FFF3D6;
-  --color-butter-ink: #A9781B;
-  --color-rose: #FBEAEA;
-  --color-rose-ink: #B85C5C;
+  --color-bg: #FAF9FC;
+  --color-ink: #252536;
+  --color-sub: #6B6B80;
+  --color-line: #EFEDF3;
+  --color-accent: #A594F0;
+  --color-accent-ink: #7862D4;
+  --color-lav: #F1EDFD;
+  --color-sage: #EAF6EF;
+  --color-sage-ink: #3F9A62;
+  --color-butter: #FFF4D9;
+  --color-butter-ink: #B07A12;
+  --color-rose: #FDECEC;
+  --color-rose-ink: #C2544F;
+  --color-sky: #EAF3FE;
 }
 
 html { background: var(--color-bg); }
-body { @apply bg-bg text-ink antialiased; font-size: 15px; line-height: 1.7; letter-spacing: -0.01em; }
-h1, h2, h3 { letter-spacing: -0.02em; }
+body { @apply bg-bg text-ink antialiased; font-size: 15px; line-height: 1.65; letter-spacing: -0.01em; }
+h1, h2, h3 { letter-spacing: -0.025em; }
 ::selection { background: var(--color-lav); }
 details > summary { list-style: none; cursor: pointer; }
 details > summary::-webkit-details-marker { display: none; }
+.card { @apply rounded-[20px] border border-line bg-white; box-shadow: 0 4px 18px rgba(120, 98, 212, 0.06); }

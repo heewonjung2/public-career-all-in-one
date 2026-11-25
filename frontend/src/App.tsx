@@ -82,10 +82,10 @@ export default function App() {
   const [mobile, setMobile] = useState(false)
   return (
     <BrowserRouter>
-      <header className="sticky top-0 z-40 bg-bg/90 backdrop-blur">
-        <div className="mx-auto flex h-[72px] max-w-[1200px] items-center justify-between px-6">
+      <header className="sticky top-0 z-40 border-b border-line bg-white/95 backdrop-blur">
+        <div className="mx-auto flex h-[68px] max-w-[1240px] items-center justify-between px-6">
           <div className="flex items-center gap-10">
-            <Link to="/" className="text-[17px] font-semibold tracking-tight">공기업 올인원</Link>
+            <Link to="/" className="whitespace-nowrap text-[19px] font-bold tracking-tight text-ink">공기업 <span className="text-accent-ink">올인원</span></Link>
             <nav className="hidden items-center gap-1 md:flex">
               {NAV.map((n) => (
                 <NavLink key={n.to} to={n.to} end={n.to === '/'}
@@ -105,7 +105,7 @@ export default function App() {
           </nav>
         )}
       </header>
-      <main className="mx-auto max-w-[1200px] px-6 pb-32 pt-8">
+      <main className="mx-auto max-w-[1240px] overflow-x-hidden px-4 pb-28 pt-8 sm:px-6">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/jobs" element={<Jobs />} />
@@ -116,7 +116,7 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
-      <footer className="mx-auto max-w-[1200px] px-6 pb-10 text-[12px] text-[#aaa69d]">
+      <footer className="mx-auto max-w-[1240px] px-6 pb-10 text-[12.5px] text-sub">
         채용 기준은 JOB-ALIO 등 공식 원문으로만 판단하며, 확인되지 않은 정보는 ‘확인 필요’로 표시합니다.
       </footer>
       <Chat />
