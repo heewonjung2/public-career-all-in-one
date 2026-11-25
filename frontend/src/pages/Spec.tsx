@@ -23,9 +23,29 @@ function Analysis() {
   const [err, setErr] = useState<string | null>(null)
   const [vers, setVers] = useState<any>(null)
   const [rid0, setRid] = useState<string | null>(null)
-  useEffect(() => { api('/rule-versions/korail').then((v) => { setVers(v); setRid(v.default) }).catch((e) => setErr(e.message)) }, [])
+  const [scope, setScope] = useState<any>(undefined)
+  useEffect(() => {
+    // 홈에서 마지막으로 선택한 기관·직렬(범위)을 그대로 사용 — 다른 기관이면 코레일 분석을 보여주지 않음
+    api('/target/scope').then((sc) => {
+      setScope(sc)
+      if (sc?.company_id === 'korail') Promise.all([api('/rule-versions/korail'), api('/active')]).then(([v, ac]) => { setVers(v); setRid(ac.recruitment_id || v.default) }).catch((e) => setErr(e.message))
+    }).catch((e) => setErr(e.message))
+  }, [])
   useEffect(() => { if (rid0) { setA(null); api('/analysis', { method: 'POST', json: { recruitment_id: rid0 } }).then(setA).catch((e) => setErr(e.message)) } }, [rid0])
   if (err) return <ErrorBox error={err} />
+  if (scope === undefined) return <Loading />
+  if (scope && scope.company_id !== 'korail') return (
+    <div className="max-w-[720px]">
+      <div className="text-[13px] text-sub">목표 기업 · {scope.job || '직렬 미입력'}</div>
+      <h1 className="mt-1 break-keep text-[26px] font-semibold leading-snug [overflow-wrap:anywhere]">{(scope.company_name || '').replace(/^\s*(\((재|사|주)\)|주식회사|재단법인|사단법인)\s*/, '')}</h1>
+      <p className="mt-3 text-[14px]">{scope.posting_title
+        ? <>기준 공고: {scope.posting_url ? <a className="text-accent-ink underline underline-offset-2" href={scope.posting_url} target="_blank" rel="noreferrer">{scope.posting_title}</a> : scope.posting_title}</>
+        : <span className="text-butter-ink">기준 공고를 선택해 주세요</span>}</p>
+      <div className="mt-6 rounded-2xl bg-butter px-5 py-4 text-[14px] text-butter-ink"><b>가점 분석 준비 중</b> — 이 기관은 공식 공고에서 검증된 가점 기준이 아직 없어 점수를 계산하지 않아요. 다른 기관의 점수는 표시하지 않습니다.</div>
+      {scope.status === '필기 과목 확인 필요' && <p className="mt-3 text-[13.5px] text-sub">필기 과목 확인 필요 {scope.posting_url && <a className="ml-1 text-accent-ink underline" href={scope.posting_url} target="_blank" rel="noreferrer">공식 공고 보기</a>}</p>}
+      <a href="/" className="mt-5 inline-block text-[13.5px] text-accent-ink underline underline-offset-4">홈에서 공고 선택하기</a>
+    </div>
+  )
   if (!a) return <Loading text="공식 공고 기준으로 분석 중" />
   const r = a.recruitment, b = a.bonus, rid = r.id
   const ev = (e: any) => e && ({ doc: e.doc, page: e.page, quote: e.quote, verified: e.evidence_verified ?? e.verified })

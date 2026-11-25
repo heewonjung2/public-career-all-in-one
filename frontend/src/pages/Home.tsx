@@ -7,12 +7,9 @@ import MiniCalendar, { EVENT_TONE } from '../components/MiniCalendar'
 import { PostingFlow, TargetPicker } from '../components/TargetFlow'
 import { NowActions } from '../components/PlanPanel'
 
-const DAYS = ['일', '월', '화', '수', '목', '금', '토']
+export const dispName = (n?: string) => (n || '').replace(/^\s*(\((재|사|주)\)|주식회사|재단법인|사단법인)\s*/, '')
 
-function CompanyMark({ name, size = 36 }: { name: string; size?: number }) {
-  const short = name.replace(/한국|공사|공단|주식회사/g, '').slice(0, 2) || name.slice(0, 2)
-  return <span className="flex shrink-0 items-center justify-center rounded-xl bg-lav text-[12px] font-bold text-accent-ink" style={{ width: size, height: size }}>{short}</span>
-}
+const DAYS = ['일', '월', '화', '수', '목', '금', '토']
 
 function dday(d?: string) {
   if (!d) return null
@@ -84,8 +81,9 @@ export default function Home() {
   const p = profile.data
   const targets = [...(p.targets || [])].sort((x: any, y: any) => (x.priority || 99) - (y.priority || 99))
   const tName = (t: any) => t?.company_name || ({ korail: '한국철도공사', kepco: '한국전력공사', seoulmetro: '서울교통공사' } as any)[t?.company_id] || t?.company_id
-  const primary = targets.find((t: any) => t.company_id === (scope?.company_id || p.primary_company_id)) || targets.find((t: any) => t.company_id === a?.recruitment.company_id) || targets[0]
-  const primaryHasRules = !primary || primary.company_id === a?.recruitment.company_id
+  const selCid = scope?.company_id || p.primary_company_id
+  const primary = targets.find((t: any) => t.company_id === selCid) || targets.find((t: any) => t.company_id === a?.recruitment.company_id) || targets[0]
+  const primaryHasRules = (selCid || primary?.company_id) === a?.recruitment.company_id
   const primaryName = scope?.company_name || (primaryHasRules ? (a?.recruitment.company || tName(primary) || '-') : tName(primary))
   const d = new Date()
   const week = rm ? (rm.weeks.find((w: any) => rm.tasks.some((t: any) => t.week === w.week && !t.done)) || rm.weeks[rm.weeks.length - 1]) : null
@@ -118,15 +116,15 @@ export default function Home() {
 
         {/* 목표 기업 */}
         <section className="card px-7 py-6">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-4 xl:flex-nowrap">
+          <div className="grid items-center gap-x-6 gap-y-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_170px] xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_170px_auto]">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="rounded-full bg-lav px-3 py-1 text-[12.5px] font-medium text-accent-ink">목표 기업</span>
                 <button onClick={() => setPicker(!picker)} className="rounded-full border border-[#D9D0FA] px-2.5 py-0.5 text-[12px] text-accent-ink hover:bg-lav">{picker ? '닫기' : '변경'}</button>
               </div>
-              <div className="mt-3 flex items-center gap-3"><CompanyMark name={primaryName} size={40} /><span className="whitespace-nowrap text-[19px] font-bold">{primaryName}</span></div>
+              <h2 className="mt-3 break-keep text-[20px] font-bold leading-snug [overflow-wrap:anywhere]">{dispName(primaryName)}</h2>
             </div>
-            <div className="min-w-0 flex-1 basis-[220px]">
+            <div className="min-w-0">
               <div className="text-[13px] text-sub">지원 직렬</div>
               <div className="text-[17px] font-bold">{scope?.job || (primaryHasRules ? a?.recruitment.job_category || '-' : primary?.job_category || '직렬 미입력')}</div>
               {primaryHasRules ? (
@@ -140,15 +138,15 @@ export default function Home() {
                   <div className="mt-0.5 text-[12.5px] text-sub">{preview ? '공식 사전예고 · 최종 공고 아님' : a?.recruitment.status_note ? '마감된 과거 공고 기준' : '확정 공고'}</div>
                 </>
               ) : (
-                <div className="mt-1 text-[13.5px]"><span className="font-medium text-butter-ink">가점 분석 준비 중</span><a href={`/jobs?q=${encodeURIComponent(primaryName || '')}`} className="ml-2 text-accent-ink">공고 조회</a></div>
+                <div className="mt-1 flex flex-wrap gap-x-2 text-[13.5px]"><span className="font-medium text-butter-ink">가점 분석 준비 중</span><a href={`/jobs?q=${encodeURIComponent(primaryName || '')}`} className="text-accent-ink">공고 조회</a></div>
               )}
             </div>
-            <div className="w-full shrink-0 sm:w-[170px] sm:border-l sm:border-line sm:pl-6">
+            <div className="min-w-0 md:border-l md:border-line md:pl-6">
               <div className="flex items-baseline gap-2 text-[13px] text-sub">학습 진척 <span className="text-[20px] font-bold text-ink">{rm ? `${rm.progress.percent}%` : '-'}</span></div>
               <div className="mt-2 h-2 rounded-full bg-lav"><div className="h-2 rounded-full bg-accent" style={{ width: `${rm?.progress.percent || 0}%` }} /></div>
               <div className="mt-1 text-[11.5px] text-sub">완료한 로드맵 과제 비율</div>
             </div>
-            <Link to="/spec" className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#D9D0FA] px-4 py-2.5 text-[14px] font-medium text-accent-ink hover:bg-lav">상세 분석 보기 <ArrowRight size={15} /></Link>
+            <Link to="/spec" className="inline-flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#D9D0FA] px-4 py-2.5 text-[14px] font-medium text-accent-ink hover:bg-lav">상세 분석 보기 <ArrowRight size={15} /></Link>
           </div>
           {picker && <div className="mt-5 border-t border-line pt-4"><TargetPicker profile={p} onDone={refreshAll} /></div>}
           {!picker && scope && (
@@ -210,7 +208,7 @@ export default function Home() {
               return (
                 <div key={i} className="grid items-center gap-2 py-3 sm:grid-cols-[34px_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
                   <span className="text-[13px] font-semibold text-accent-ink">{t.priority || i + 1}순위</span>
-                  <span className="flex items-center gap-2.5 text-[14.5px] font-semibold"><CompanyMark name={name} size={28} />{name}</span>
+                  <span className="min-w-0 break-keep text-[14.5px] font-semibold">{dispName(name)}</span>
                   <span className="text-[13.5px] text-sub">{t.job_category || '직렬 미입력'} · {t.recruitment_type || '-'}</span>
                   <span className="text-[13.5px]">{analyzed ? <span className="text-ink">가점 {a.bonus.total_confirmed}점 · {a.rule_version?.type === '사전예고' ? '2027 사전예고' : '확정 공고'}</span> : <span className="text-butter-ink">가점 분석 준비 중</span>}
                     {!analyzed && <a href={`/jobs?q=${encodeURIComponent(name || '')}`} className="ml-2 text-[12.5px] text-accent-ink">공고 조회</a>}</span>
@@ -230,7 +228,7 @@ export default function Home() {
           <div className="divide-y divide-line">
             {(recs.data || []).filter((r) => !r.user_document).map((r) => (
               <Link to={`/jobs?id=${r.id}`} key={r.id} className="grid items-center gap-3 py-3.5 sm:grid-cols-[150px_76px_minmax(0,1fr)_auto]">
-                <span className="flex items-center gap-2.5 text-[14.5px] font-semibold"><CompanyMark name={r.company} size={30} />{r.company.replace('한국철도공사', '한국철도공사')}</span>
+                <span className="min-w-0 break-keep text-[14.5px] font-semibold">{dispName(r.company)}</span>
                 <span className={`w-fit rounded-md px-2 py-0.5 text-[12px] font-medium ${r.application_status === '접수 중' ? 'bg-lav text-accent-ink' : 'bg-[#F3F2F7] text-sub'}`}>{r.application_status}</span>
                 <span className="truncate text-[14.5px]">{r.recruitment_title}<span className="ml-2 rounded-md bg-[#F6F5FA] px-2 py-0.5 text-[12px] text-sub">{r.job_category}</span></span>
                 <span className="text-[13px] text-sub">{r.application_period?.start ? `${r.application_period.start} ~ ${r.application_period.end?.slice(5)}` : r.published_at}</span>
