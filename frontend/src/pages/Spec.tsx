@@ -21,24 +21,82 @@ export default function Spec() {
 function Analysis() {
   const [a, setA] = useState<any>(null)
   const [err, setErr] = useState<string | null>(null)
-  useEffect(() => { api('/analysis', { method: 'POST', json: { recruitment_id: MAIN_RID } }).then(setA).catch((e) => setErr(e.message)) }, [])
+  const [vers, setVers] = useState<any>(null)
+  const [rid0, setRid] = useState<string | null>(null)
+  useEffect(() => { api('/rule-versions/korail').then((v) => { setVers(v); setRid(v.default || MAIN_RID) }).catch(() => setRid(MAIN_RID)) }, [])
+  useEffect(() => { if (rid0) { setA(null); api('/analysis', { method: 'POST', json: { recruitment_id: rid0 } }).then(setA).catch((e) => setErr(e.message)) } }, [rid0])
   if (err) return <ErrorBox error={err} />
   if (!a) return <Loading text="공식 공고 기준으로 분석 중" />
   const r = a.recruitment, b = a.bonus, rid = r.id
   const ev = (e: any) => e && ({ doc: e.doc, page: e.page, quote: e.quote, verified: e.evidence_verified ?? e.verified })
+  const preview = a.rule_version?.type === '사전예고'
+  const ds = a.document_screening
 
   return (
     <div className="grid gap-x-16 gap-y-14 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="space-y-14">
         <div>
-          <div className="text-[13px] text-sub">{r.company} · {r.job_category}</div>
-          <h1 className="mt-1 text-[28px] font-semibold">{a.eligibility.overall}</h1>
-          <p className="mt-2 text-[14px] text-sub">
-            {r.recruitment_title} ({r.published_at}) 기준 ·{' '}
+          {vers?.versions?.length > 1 && (
+            <div className="mb-5 flex flex-wrap items-center gap-2">
+              <span className="text-[13px] text-sub">분석 기준</span>
+              {vers.versions.map((v: any) => (
+                <button key={v.recruitment_id} onClick={() => setRid(v.recruitment_id)}
+                  className={`rounded-full px-4 py-1.5 text-[13.5px] ${v.recruitment_id === rid ? 'bg-accent text-white' : 'bg-white hover:bg-lav'}`}>
+                  {v.year} {v.type === '사전예고' ? '사전예고' : '확정 공고'}{v.year === vers.target_year ? ' · 목표 연도' : ''}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="text-[13px] text-sub">{r.company} · {r.job_category} · {preview ? '공식 사전예고(최종 공고 아님)' : '확정 채용공고'}</div>
+          <h1 className="mt-1 text-[26px] font-semibold">{r.recruitment_title}</h1>
+          <p className="mt-2 flex flex-wrap items-center gap-x-3 text-[14px] text-sub">
+            <span>공식 발표 {r.published_at}</span>
+            <Status s={a.eligibility.overall.startsWith('지원 자격 충족') ? '충족' : a.eligibility.overall.startsWith('지원 불가') ? '미충족' : '확인 필요'} />
             <a className="inline-flex items-center gap-0.5 text-accent-ink" href={r.official_source.url} target="_blank" rel="noreferrer">공식 원문<ArrowUpRight size={13} /></a>
           </p>
         </div>
         <Note>{r.status_note}</Note>
+
+        {ds?.available && (
+          <Section title="서류전형 점수 (2027 사전예고 기준)" action={<span className="text-[12.5px] text-sub">100점 만점 · 채용인원 {ds.selection_ratio}배수 선발</span>}>
+            <div className="grid gap-6 sm:grid-cols-3">
+              <div><div className="text-[13px] text-sub">어학 ({ds.weights.language}점)</div><div className="mt-1 text-[24px]">{ds.language_points}</div>
+                {ds.language_points_if_valid != null && <div className="text-[12.5px] text-butter-ink">유효기간 확인 시 {ds.language_points_if_valid}점</div>}</div>
+              <div><div className="text-[13px] text-sub">자격증 ({ds.weights.cert}점, 원점수×{ds.weights.multiplier})</div><div className="mt-1 text-[24px]">{ds.cert_points}</div>
+                <div className="text-[12.5px] text-sub">원점수 {ds.cert_raw} / 20 · 예상</div></div>
+              <div><div className="text-[13px] text-sub">합계</div><div className="mt-1 text-[24px] font-semibold">{ds.total}</div>
+                {ds.total_if_language_valid != null && <div className="text-[12.5px] text-butter-ink">조건부 {ds.total_if_language_valid}점</div>}</div>
+            </div>
+            <div className="mt-6 divide-y divide-line text-[14px]">
+              {ds.languages.map((l: any, i: number) => (
+                <div key={i} className="grid gap-1 py-3 sm:grid-cols-[180px_160px_1fr]">
+                  <span>{l.test} {l.score}</span><Status s={l.status} />
+                  <span className="text-[13px] text-sub">{l.conversion ? l.conversion + ' · ' : ''}{l.reason}{l.selected ? ' · 반영' : ''}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 space-y-1 text-[12.5px] text-sub">
+              <p>{ds.formula} <EvidenceToggle rid={rid} ev={ev(ds.evidence.formula_evidence)} /></p>
+              <p>유효기간: 성적 취득일로부터 2년, 국가공무원채용시스템 사전등록 성적은 해당 시스템 인정기간까지 <EvidenceToggle rid={rid} ev={ev(ds.language_evidence.validity_evidence)} /></p>
+              <p>{ds.cert_list_status}</p>
+              {ds.reference_date_provisional && <p className="text-butter-ink">판단 기준일 미발표 → 오늘({ds.reference_date}) 기준 잠정 판단</p>}
+              <p>{ds.intern_note} <EvidenceToggle rid={rid} ev={ev(ds.evidence.intern_exemption)} /></p>
+            </div>
+          </Section>
+        )}
+
+        {a.rule_version?.changes_vs_2026 && (
+          <Section title="2026 → 2027 변경 사항">
+            <div className="divide-y divide-line text-[14px]">
+              {a.rule_version.changes_vs_2026.map((c: any) => (
+                <div key={c.item} className="grid gap-1 py-3.5 sm:grid-cols-[120px_1fr_1fr_130px]">
+                  <span>{c.item}</span><span className="text-sub">{c.before}</span><span>{c.after}<div><EvidenceToggle rid={rid} ev={ev(c.evidence)} /></div></span>
+                  <span className={`text-[12.5px] ${c.status.startsWith('공식') ? 'text-accent-ink' : 'text-butter-ink'}`}>{c.status}</span>
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
 
         <Section title="지원 자격">
           <div className="divide-y divide-line">
@@ -56,8 +114,8 @@ function Analysis() {
           </div>
         </Section>
 
-        <Section title="필기 우대 가점" action={<span className="text-[12.5px] text-sub">규칙 엔진 계산 · AI 미사용</span>}>
-          <p className="mb-5 text-[13.5px] leading-relaxed text-sub">{b.base_score_note}</p>
+        <Section title={preview ? "자격증 원점수 (서류 점수에 반영 · 2026 목록 참고)" : "필기 우대 가점"} action={<span className="text-[12.5px] text-sub">{(b.usage || []).filter((u: any) => u.pool === "일반 자격증").map((u: any) => `${u.group} ${u.used}/${u.cap}`).join(" · ")}</span>}>
+          {!preview && <p className="mb-5 text-[13.5px] leading-relaxed text-sub">{b.base_score_note}</p>}
           <div className="divide-y divide-line">
             {b.rows.map((row: any, i: number) => (
               <div key={i} className="grid gap-2 py-4 sm:grid-cols-[180px_70px_1fr]">
@@ -103,19 +161,22 @@ function Analysis() {
           <div className="text-[13px] text-sub">확정 가점</div>
           <div className="mt-1 text-[40px] font-semibold leading-none">{b.total_confirmed}<span className="ml-1 text-[15px] font-normal text-sub">점</span></div>
           <div className="mt-4 text-[13px] text-butter-ink">해석 필요 항목 포함 {b.total_with_interpretation}점</div>
-          <p className="mt-3 text-[12.5px] leading-relaxed text-sub">{b.interpretation_notes[0]?.text}</p>
+          <p className="mt-3 text-[12.5px] leading-relaxed text-sub">{b.scope_resolution?.[0]?.text}</p>
         </Sheet>
         <div>
           <div className="text-[13px] text-sub">경쟁력</div>
           <div className="mt-1 text-[16px]">{a.competition.judgement}</div>
           <p className="mt-2 text-[13px] leading-relaxed text-sub">{a.competition.note}</p>
-          <p className="mt-2 text-[13px]">{a.competition.derived} <EvidenceToggle rid={rid} ev={ev(a.screening.written_pass_evidence)} /></p>
+          {a.screening && <p className="mt-2 text-[13px]">{a.competition.derived} <EvidenceToggle rid={rid} ev={ev(a.screening.written_pass_evidence)} /></p>}
           <p className="mt-2 text-[12.5px] text-sub">익명 준비생 비교는 실제 이용자 통계가 없어 제공하지 않아요.</p>
         </div>
         <div>
           <div className="text-[13px] text-sub">서류전형</div>
-          <p className="mt-1 text-[14px]">자기소개서 적격/부적격 판정이라 서류 점수는 산출하지 않아요. <EvidenceToggle rid={rid} ev={ev(a.screening.evidence)} /></p>
+          {a.screening
+            ? <p className="mt-1 text-[14px]">자기소개서 적격/부적격 판정이라 서류 점수는 산출하지 않아요. <EvidenceToggle rid={rid} ev={ev(a.screening.evidence)} /></p>
+            : <p className="mt-1 text-[14px]">{ds?.available ? `어학+자격증 100점 점수제, ${ds.selection_ratio}배수 선발 (왼쪽 서류 점수 참고)` : '공고 기준 확인 필요'}</p>}
         </div>
+        {a.rule_version?.written_exam_note && <div><div className="text-[13px] text-sub">필기시험</div><p className="mt-1 text-[13.5px] text-sub">{a.rule_version.written_exam_note}</p></div>}
         <div>
           <div className="text-[13px] text-sub">공식 공고에서 확인되지 않은 정보</div>
           <p className="mt-1 text-[13.5px] leading-relaxed text-sub">{a.not_found.join(' · ')}</p>

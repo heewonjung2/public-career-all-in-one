@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .database import DATA_DIR, ROOT, connect, dumps, init_db, loads
-from .services import ai_analyzer, document_parser, engine, rag, roadmap, source_verifier, strategy, versions
+from .services import ai_analyzer, document_parser, engine, rag, roadmap, screening, source_verifier, strategy, versions
 from .services.evidence_validator import page_text, validate_rulefile
 
 app = FastAPI(title="공기업 All-in-One API", version="0.1.0")
@@ -40,7 +41,7 @@ def now() -> str:
 
 
 def load_rules() -> None:
-    for f in sorted((DATA_DIR / "recruitment_rules").glob("korail_2026*.json")):
+    for f in sorted((DATA_DIR / "recruitment_rules").glob("korail_20*.json")):
         rule = json.loads(f.read_text(encoding="utf-8"))
         VALIDATION[rule["id"]] = validate_rulefile(rule, DATA_DIR)
         if VALIDATION[rule["id"]]["failed"]:
@@ -283,6 +284,10 @@ def _analysis(rid: str, extra: list[dict] | None = None) -> dict:
                          "derived": (f"공고 기준 필기 합격 인원 = 채용인원 {hc}명 × {ratio}배수 = 약 {hc * ratio}명" if hc and ratio else None),
                          "criteria": "안정권/적정권/도전권은 동일 기준(직렬·지역·유형·점수산정 방식)의 공식 합격선이 확보된 경우에만 산출"},
         "final_score": rule.get("final_score"), "screening": rule.get("screening"), "notices": rule.get("notices", []),
+        "document_screening": screening.document_score(rule, p),
+        "rule_version": {"type": rule.get("rule_version_type", "확정 채용공고"), "target_year": rule.get("target_year", rule.get("recruitment_year")),
+                         "changes_vs_2026": rule.get("changes_vs_2026"), "written_exam_note": rule.get("written_exam_note"),
+                         "cert_catalog_note": rule.get("cert_catalog_note")},
         "analyzed_at": now(),
     }
 
@@ -290,6 +295,23 @@ def _analysis(rid: str, extra: list[dict] | None = None) -> dict:
 @app.post("/api/analysis")
 def analysis(req: AnalysisReq):
     return _analysis(req.recruitment_id)
+
+
+@app.get("/api/rule-versions/{company_id}")
+def rule_versions(company_id: str):
+    """분석 기준(채용 규칙 버전) 목록. 프로필 목표 연도와 같은 버전을 기본값으로 표시."""
+    p = get_profile()
+    m = re.search(r"(20\d\d)", p.get("target_period") or "")
+    target = int(m.group(1)) if m else None
+    out = []
+    for r in RULES.values():
+        if r["company_id"] != company_id or not r.get("analysis_supported", True):
+            continue
+        out.append({"recruitment_id": r["id"], "title": r["recruitment_title"], "type": r.get("rule_version_type", "확정 채용공고"),
+                    "year": r.get("target_year", r.get("recruitment_year")), "published_at": r.get("published_at"), "status_note": r.get("status_note")})
+    out.sort(key=lambda x: (x["year"] or 0, x["published_at"] or ""))
+    default = next((x["recruitment_id"] for x in reversed(out) if x["year"] == target), out[-1]["recruitment_id"] if out else None)
+    return {"versions": out, "default": default, "target_year": target}
 
 
 class SimReq(BaseModel):

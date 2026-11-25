@@ -68,6 +68,9 @@ const DOT: Record<string, string> = {
   '확인 필요': 'bg-butter-ink', '인정(해석 필요)': 'bg-butter-ink', '복습 필요': 'bg-butter-ink', '준비 중': 'bg-butter-ink', '보완 필요': 'bg-butter-ink',
   '미충족': 'bg-rose-ink', '미인정': 'bg-rose-ink', '취약': 'bg-rose-ink', '미시작': 'bg-rose-ink', '미입력': 'bg-[#cfcac0]',
   '확정 계산에만 인정': 'bg-accent',
+  '최고점 자격증으로 선택': 'bg-sage-ink', '가점 상한 도달': 'bg-butter-ink', '해당 공고 인정': 'bg-sage-ink', '사전등록 성적으로 인정': 'bg-sage-ink',
+  '중복 인정 제한으로 제외': 'bg-[#cfcac0]', '그룹별 인정 개수 제한으로 제외': 'bg-[#cfcac0]', '전체 인정 개수 제한으로 제외': 'bg-[#cfcac0]',
+  '지원 직렬 인정 대상 아님': 'bg-rose-ink', '유효기간 만료': 'bg-rose-ink', '해당 공고 미인정': 'bg-rose-ink', '공식 기준 확인 필요': 'bg-butter-ink',
 }
 export function Status({ s, className = '' }: { s: string; className?: string }) {
   const k = s?.startsWith('확인 필요') ? '확인 필요' : s?.startsWith('지원 불가') ? '미충족' : s
@@ -83,7 +86,8 @@ export const link = 'text-accent-ink hover:underline underline-offset-4'
 
 /* ---------- 공식 근거: 항목 옆에서 펼쳐 보기 ---------- */
 export type Evidence = { doc: string; page: number; quote: string; verified?: boolean }
-const docName = (d: string) => (d === 'notice' ? '공고문' : d === 'reference' ? '참고자료' : d)
+const DOC_NAMES: Record<string, string> = { notice: '공고문', reference: '참고자료', ref2026_notice: '2026 공고문(과거 참고)', ref2026_reference: '2026 참고자료(과거 참고)' }
+const docName = (d: string) => DOC_NAMES[d] || d
 
 export function EvidenceToggle({ rid, ev, label }: { rid: string; ev?: Evidence | null; label?: string }) {
   const [open, setOpen] = useState(false)

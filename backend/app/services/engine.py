@@ -71,6 +71,8 @@ def check_eligibility(rec: dict, profile: dict) -> dict:
                 status, reason = CHECK, "본인이 직접 확인해야 하는 요건 - 내 스펙에서 확인 체크"
         elif t == "not_in_notice":
             status, reason = NONE, r["rule_text"]
+        elif t == "pending_final_notice":
+            status, reason = CHECK, "최종 채용공고 확인 필요 — " + r["rule_text"]
         items.append({"id": r["id"], "item": r["item"], "rule_text": r["rule_text"], "status": status,
                       "reason": reason, "evidence": _ev(r)})
     statuses = [i["status"] for i in items]
