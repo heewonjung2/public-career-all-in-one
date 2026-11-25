@@ -97,7 +97,7 @@ def test_same_category_only_one(rule):
     # 한국사 1급(2.5)과 컴활 2급(1.0)은 모두 공통직무 → 1개만 인정
     t, b = total(rule, [cert("한국사능력검정시험", "1급"), cert("컴퓨터활용능력", "2급")])
     assert t == 2.5
-    assert {r["cert"]: r["status"] for r in b["rows"]}["컴퓨터활용능력 2급"] == "미반영"
+    assert {r["cert"]: r["status"] for r in b["rows"]}["컴퓨터활용능력 2급"] == "그룹별 인정 개수 제한으로 제외"
 
 
 def test_same_kind_highest_only(rule):
@@ -112,21 +112,24 @@ def test_not_in_catalog_is_not_zero(rule):
 
 def test_max_three_and_12_cap(rule):
     certs = [cert("한국사능력검정시험", "1급"), cert("산업안전기사"), cert("정보처리기사"), cert("정보보안기사"), cert("정보통신기사")]
-    t, b = total(rule, certs, interp=True)
-    # 공통 2.5 + 안전 4.0 + 직렬별 2개(4.0, 4.0) 중 상위 3개 = 12.0 (상한 12)
+    t, b = total(rule, certs)
+    # 공고 기준 수기 계산: 공통 2.5 / 안전 4.0 / 직렬별 4.0·4.0·4.0(최대 2개) / 전체 3개·12점
+    # 최적 = 안전 4 + 직렬별 4 + 직렬별 4 = 12 → 한국사 2.5는 전체 3개 제한으로 제외
     assert t == 12.0
-    assert sum(1 for r in b["rows"] if r["status"] in ("인정", "인정(해석 필요)")) == 3
-    assert {r["cert"]: r["status"] for r in b["rows"]}["한국사능력검정시험 1급"] == "확정 계산에만 인정"
+    st = {r["cert"]: r["status"] for r in b["rows"]}
+    assert sum(1 for r in b["rows"] if r["applied"] > 0) == 3
+    assert st["한국사능력검정시험 1급"] == "전체 인정 개수 제한으로 제외"
 
 
-def test_interpretation_separated(rule):
-    t_conf, b = total(rule, [cert("정보처리기사")])
-    assert t_conf == 0 and b["total_with_interpretation"] == 4.0
+def test_it_inherits_samuyoungup_list(rule):
+    """IT는 사무영업 직렬의 세부구분(공고문 p.1 인원표, 참고자료 p.4 직무소개서) → '사무영업 및 열차승무' 목록 적용."""
+    t, b = total(rule, [cert("정보처리기사")])
+    assert t == 4.0 and b["rows"][0]["status"] == "인정"
 
 
 def test_expired_cert(rule):
     t, b = total(rule, [cert("한국사능력검정시험", "1급", expires_at="2025-01-01")])
-    assert t == 0 and b["rows"][0]["status"] == "미인정"
+    assert t == 0 and b["rows"][0]["status"] == "유효기간 만료"
 
 
 def test_acquired_after_reference_date(rule):
