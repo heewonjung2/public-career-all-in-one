@@ -286,26 +286,54 @@ function Edit({ onSaved }: { onSaved: () => void }) {
         ))}
         <p className="mt-2 text-[12.5px] text-sub">맨 앞 숫자가 우선순위예요. 통합 취업 전략 계산에 쓰여요.</p>
       </Section>
-      <Section title="자격증" action={<Add onClick={() => add('certificates', { name: '', grade: '', acquired_at: '', expires_at: '' })} />}>
+      <Section title="자격증" action={<Add onClick={() => add('certificates', { name: '', grade: '', acquired_at: '', has_validity: false, expires_at: '', issuer: '' })} />}>
+        <div className="mb-2 hidden grid-cols-[1.5fr_0.7fr_1fr_1.3fr_36px] gap-2 px-1 text-[12px] text-sub sm:grid">
+          <span>자격증명</span><span>등급</span><span>취득일 (공고 기준일 판단)</span><span>유효기간 (해당 자격증만)</span><span />
+        </div>
         {(p.certificates || []).map((c: any, i: number) => (
-          <div key={i} className="mb-2 grid grid-cols-[1.5fr_0.7fr_1fr_1fr_36px] gap-2">
-            <input className={input} placeholder="자격증명" value={c.name} onChange={(e) => setIn('certificates', i, 'name', e.target.value)} />
-            <input className={input} placeholder="등급" value={c.grade} onChange={(e) => setIn('certificates', i, 'grade', e.target.value)} />
-            <input className={input} type="date" title="취득일" value={c.acquired_at} onChange={(e) => setIn('certificates', i, 'acquired_at', e.target.value)} />
-            <input className={input} type="date" title="유효기간" value={c.expires_at} onChange={(e) => setIn('certificates', i, 'expires_at', e.target.value)} />
+          <div key={i} className="mb-2 grid grid-cols-[1.5fr_0.7fr_1fr_1.3fr_36px] items-center gap-2">
+            <input className={input} placeholder="예: 정보처리기사" value={c.name} onChange={(e) => setIn('certificates', i, 'name', e.target.value)} />
+            <input className={input} placeholder="예: 1급" value={c.grade} onChange={(e) => setIn('certificates', i, 'grade', e.target.value)} />
+            <input className={input} type="date" aria-label="취득일" value={c.acquired_at || ''} onChange={(e) => setIn('certificates', i, 'acquired_at', e.target.value)} />
+            <div className="flex items-center gap-2">
+              <label className="flex shrink-0 items-center gap-1 text-[12.5px] text-sub"><input type="checkbox" checked={!!c.has_validity} onChange={(e) => setIn('certificates', i, 'has_validity', e.target.checked)} />있음</label>
+              {c.has_validity && <input className={input} type="date" aria-label="유효기간 만료일" value={c.expires_at || ''} onChange={(e) => setIn('certificates', i, 'expires_at', e.target.value)} />}
+            </div>
             <Del onClick={() => del('certificates', i)} />
           </div>
         ))}
+        <p className="mt-1 text-[12px] text-sub">자격증 자체의 유효기간과 채용공고의 인정 기준일은 다르게 판단해요. 취득일이 공고 기준일 이후면 그 공고에서는 인정되지 않아요.</p>
       </Section>
-      <Section title="어학" action={<Add onClick={() => add('languages', { test: '', score: '', taken_at: '' })} />}>
+      <Section title="어학성적" action={<Add onClick={() => add('languages', { test: '', score: '', exam_date: '', original_expiry_date: '', preregistration_status: '미등록', preregistration_date: '', preregistration_expiry_date: '' })} />}>
+        <div className="mb-2 hidden grid-cols-[1.2fr_0.9fr_1fr_1fr_36px] gap-2 px-1 text-[12px] text-sub sm:grid">
+          <span>시험명</span><span>점수·등급</span><span>응시일</span><span>기존 만료일 (성적표 기준)</span><span />
+        </div>
         {(p.languages || []).map((c: any, i: number) => (
-          <div key={i} className="mb-2 grid grid-cols-[1.4fr_1fr_1fr_36px] gap-2">
-            <input className={input} value={c.test} onChange={(e) => setIn('languages', i, 'test', e.target.value)} />
-            <input className={input} value={c.score} onChange={(e) => setIn('languages', i, 'score', e.target.value)} />
-            <input className={input} type="date" value={c.taken_at} onChange={(e) => setIn('languages', i, 'taken_at', e.target.value)} />
-            <Del onClick={() => del('languages', i)} />
+          <div key={i} className="mb-3 rounded-2xl border border-line p-3">
+            <div className="grid grid-cols-[1.2fr_0.9fr_1fr_1fr_36px] items-center gap-2">
+              <select className={input} value={c.test} onChange={(e) => setIn('languages', i, 'test', e.target.value)}>
+                {['', 'TOEIC', 'TOEIC Speaking', 'TEPS', 'OPIc', 'JPT', 'HSK', 'IELTS', 'TOEFL', '기타'].map((x) => <option key={x} value={x}>{x || '선택'}</option>)}
+              </select>
+              <input className={input} placeholder={c.test === 'TOEIC Speaking' || c.test === 'OPIc' ? '등급 예: IH' : '점수 예: 860'} value={c.score} onChange={(e) => setIn('languages', i, 'score', e.target.value)} />
+              <input className={input} type="date" aria-label="응시일" value={c.exam_date || ''} onChange={(e) => setIn('languages', i, 'exam_date', e.target.value)} />
+              <input className={input} type="date" aria-label="기존 만료일" value={c.original_expiry_date || ''} onChange={(e) => setIn('languages', i, 'original_expiry_date', e.target.value)} />
+              <Del onClick={() => del('languages', i)} />
+            </div>
+            {c.legacy_date && <p className="mt-2 text-[12.5px] text-butter-ink">이전에 입력한 날짜 {c.legacy_date}가 응시일인지 만료일인지 알 수 없어 반영하지 않았어요. 위 칸에 다시 입력해 주세요.</p>}
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-[13px]">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={c.preregistration_status === '등록 완료(사용자 입력)'} onChange={(e) => setIn('languages', i, 'preregistration_status', e.target.checked ? '등록 완료(사용자 입력)' : '미등록')} />어학성적 사전등록 완료</label>
+              <a href="https://career.gosi.kr/" target="_blank" rel="noreferrer" className="text-[12.5px] text-accent-ink underline underline-offset-4">통합채용포털</a>
+              {c.preregistration_status === '등록 완료(사용자 입력)' && (
+                <>
+                  <span className="text-sub">사전등록일</span><input className={`${input} !w-40`} type="date" value={c.preregistration_date || ''} onChange={(e) => setIn('languages', i, 'preregistration_date', e.target.value)} />
+                  <span className="text-sub">인정기간 만료일</span><input className={`${input} !w-40`} type="date" value={c.preregistration_expiry_date || ''} onChange={(e) => setIn('languages', i, 'preregistration_expiry_date', e.target.value)} />
+                  <span className="text-[12px] text-sub">사용자 입력 정보 · 정부 시스템에서 직접 확인한 값이 아님(확인서 기준으로 입력)</span>
+                </>
+              )}
+            </div>
           </div>
         ))}
+        <p className="mt-1 text-[12px] text-sub">기업마다 사전등록 성적 인정 여부·기간이 달라요. 분석 화면에서 공고 기준으로 따로 판단해요.</p>
       </Section>
       <Section title="준비 상태">
         <div className="grid gap-x-10 gap-y-2 sm:grid-cols-2">
