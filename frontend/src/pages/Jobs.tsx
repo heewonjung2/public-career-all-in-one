@@ -5,7 +5,7 @@ import { api } from '../api'
 import { Empty, ErrorBox, EvidenceToggle, Loading, Note, Section, Sheet, Status, Tabs, btnLine, btnPrimary, btnSoft, input, link, useApi } from '../components/ui'
 
 function CompanySearch() {
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(() => new URLSearchParams(window.location.search).get('q') || '')
   const [res, setRes] = useState<any>(null)
   const [busy, setBusy] = useState(false)
   const [an, setAn] = useState<Record<string, any>>({})
@@ -28,7 +28,7 @@ function CompanySearch() {
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="기관명을 입력하세요 (예: 한국수자원공사, 인천교통공사)" className={`${input} !py-3 !text-[15px]`} />
         <button className={`${btnPrimary} !rounded-xl !px-6`} disabled={busy || !q.trim()}>{busy ? '검색 중…' : '검색'}</button>
       </form>
-      {busy && <p className="mt-3 text-[13px] text-sub">공식 사이트를 검색하고 각 공고 페이지를 확인하는 중이에요. 1분 정도 걸릴 수 있어요.</p>}
+      {busy && <p className="mt-3 text-[13px] text-sub">공식 채용 사이트에서 공고를 찾고 각 공고 페이지를 확인하는 중이에요.</p>}
       {res && (
         <div className="mt-5">
           <div className="mb-2 text-[13px] text-sub">{res.status}{res.cached ? ' · 저장된 검색 결과' : ''}{res.elapsed_s ? ` · ${res.elapsed_s}초` : ''}</div>

@@ -147,7 +147,7 @@ export default function Home() {
                   <div className="mt-0.5 text-[12.5px] text-sub">{preview ? '공식 사전예고 · 최종 공고 아님' : a?.recruitment.status_note ? '마감된 과거 공고 기준' : '확정 공고'}</div>
                 </>
               ) : (
-                <div className="mt-1 text-[13.5px]"><span className="font-medium text-butter-ink">가점 분석 준비 중</span>{primary?.source_url && <a href={primary.source_url} target="_blank" rel="noreferrer" className="ml-2 text-accent-ink">공식 공고 보기</a>}</div>
+                <div className="mt-1 text-[13.5px]"><span className="font-medium text-butter-ink">가점 분석 준비 중</span><a href={`/jobs?q=${encodeURIComponent(primaryName || '')}`} className="ml-2 text-accent-ink">공고 조회</a></div>
               )}
             </div>
             <div className="w-full shrink-0 sm:w-[170px] sm:border-l sm:border-line sm:pl-6">
@@ -168,8 +168,7 @@ export default function Home() {
               </div>
               <div className="mb-2 text-[13px] text-sub">새 기업 검색해서 추가</div>
               <TargetSearch
-                onPick={(org: string, url: string, title: string) => addAndSelect({ company_id: COMP.find((c) => c.name === org)?.id || `org:${org}`, company_name: org, job_category: '', recruitment_type: '신입', priority: targets.length + 1, source_url: url, source_title: title })}
-                onQuick={(id: string) => addAndSelect({ company_id: id, company_name: COMP.find((c) => c.id === id)?.name, job_category: '', recruitment_type: '신입', priority: targets.length + 1 })}
+                onPick={(org: string, _url: string, _title: string, group?: string) => addAndSelect({ company_id: COMP.find((c) => c.name === org)?.id || `org:${org}`, company_name: org, institution_group: group, job_category: '', recruitment_type: '신입', priority: targets.length + 1 })}
               />
               <p className="text-[12px] text-sub">직렬은 내 스펙 → 스펙 편집에서 입력할 수 있어요.</p>
             </div>
@@ -228,7 +227,7 @@ export default function Home() {
                   <span className="flex items-center gap-2.5 text-[14.5px] font-semibold"><CompanyMark name={name} size={28} />{name}</span>
                   <span className="text-[13.5px] text-sub">{t.job_category || '직렬 미입력'} · {t.recruitment_type || '-'}</span>
                   <span className="text-[13.5px]">{analyzed ? <span className="text-ink">가점 {a.bonus.total_confirmed}점 · {a.rule_version?.type === '사전예고' ? '2027 사전예고' : '확정 공고'}</span> : <span className="text-butter-ink">가점 분석 준비 중</span>}
-                    {t.source_url && <a href={t.source_url} target="_blank" rel="noreferrer" className="ml-2 text-[12.5px] text-accent-ink">공식 공고</a>}</span>
+                    {!analyzed && <a href={`/jobs?q=${encodeURIComponent(name || '')}`} className="ml-2 text-[12.5px] text-accent-ink">공고 조회</a>}</span>
                 </div>
               )
             })}

@@ -236,37 +236,46 @@ const NCS = ['의사소통능력', '수리능력', '문제해결능력']
 const MAJOR = ['운영체제', '데이터베이스', '데이터통신', '소프트웨어공학', '정보보호개론', '컴퓨터구조', '자료구조', '알고리즘', '인공지능']
 export const COMP = [{ id: 'korail', name: '한국철도공사' }, { id: 'kepco', name: '한국전력공사' }, { id: 'seoulmetro', name: '서울교통공사' }]
 
-export function TargetSearch({ onPick, onQuick }: { onPick: (org: string, url: string, title: string) => void; onQuick: (id: string) => void }) {
+export function TargetSearch({ onPick }: { onPick: (org: string, url: string, title: string, group?: string) => void; onQuick?: (id: string) => void }) {
   const [q, setQ] = useState('')
   const [res, setRes] = useState<any>(null)
-  const [busy, setBusy] = useState(false)
-  const go = async (e?: any) => {
-    e?.preventDefault(); if (!q.trim()) return
-    setBusy(true); setRes(null)
-    try { setRes(await api('/search/postings', { method: 'POST', json: { q } })) } catch (er: any) { setRes({ results: [], message: er.message }) } finally { setBusy(false) }
-  }
+  const [all, setAll] = useState<any>(null)
+  const [group, setGroup] = useState('전체')
+  const [showAll, setShowAll] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => { if (q.trim()) api(`/institutions?q=${encodeURIComponent(q)}`).then(setRes).catch(() => setRes(null)); else setRes(null) }, 150)
+    return () => clearTimeout(t)
+  }, [q])
+  useEffect(() => { if (showAll || (res && res.total === 0)) api(`/institutions?group=${encodeURIComponent(group)}`).then(setAll).catch(() => {}) }, [showAll, res, group])
+  const Row = ({ i }: { i: any }) => (
+    <div className="flex items-center justify-between gap-2 py-2.5 text-[14px]">
+      <div className="min-w-0">
+        <span className="font-semibold">{i.name}</span>
+        <span className={`ml-2 rounded px-1.5 py-0.5 text-[11px] ${i.group === '중앙 공공기관' ? 'bg-lav text-accent-ink' : 'bg-sage text-sage-ink'}`}>{i.group}</span>
+        {i.match && <span className="ml-2 text-[12px] text-sub">{i.match}</span>}
+      </div>
+      <button className={btnSoft} onClick={() => onPick(i.name, '', '', i.group)}>선택</button>
+    </div>
+  )
+  const empty = res && res.total === 0
   return (
     <div className="mb-4 rounded-2xl border border-[#E2DBFA] bg-[#FBFAFF] p-4">
-      <form onSubmit={go} className="flex gap-2">
-        <input className={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder="기업명 검색 (예: 한국공항공사)" />
-        <button className={btnPrimary} disabled={busy || !q.trim()}>{busy ? '검색 중…' : '검색'}</button>
-      </form>
-      <div className="mt-2 flex flex-wrap gap-2 text-[12.5px]">
-        <span className="text-sub">빠른 선택</span>
-        {COMP.map((c) => <button key={c.id} onClick={() => onQuick(c.id)} className="rounded-full bg-white px-3 py-1 hover:bg-lav">{c.name}</button>)}
+      <input className={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder="기관명·약칭 입력 (예: 한수원, 마사회, 인국공, 서교공)" autoFocus />
+      {res && res.total > 0 && <div className="mt-2 max-h-72 divide-y divide-line overflow-auto">{res.results.map((i: any) => <Row key={i.name} i={i} />)}</div>}
+      {empty && <p className="mt-2 text-[13px] text-butter-ink">‘{q}’와 일치하는 공공기관이 없어요. 아래 전체 기관 목록에서 찾아보세요.</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px]">
+        {!empty && <button onClick={() => setShowAll(!showAll)} className="text-accent-ink underline underline-offset-4">{showAll ? '전체 목록 닫기' : '전체 기관 목록 보기'}</button>}
+        {(showAll || empty) && ['전체', '중앙 공공기관', '지방공공기관'].map((g) => (
+          <button key={g} onClick={() => setGroup(g)} className={`rounded-full px-3 py-1 ${group === g ? 'bg-accent text-white' : 'bg-white hover:bg-lav'}`}>{g}</button>
+        ))}
       </div>
-      {busy && <p className="mt-2 text-[12.5px] text-sub">공식 채용 사이트를 검색하고 공고 페이지를 확인 중이에요(최대 1~2분, 같은 기관은 다음부터 바로 나와요).</p>}
-      {res?.message && <p className="mt-2 text-[12.5px] text-butter-ink">{res.message}</p>}
-      {res?.results?.length > 0 && (
-        <div className="mt-3 divide-y divide-line">
-          {res.results.map((r: any) => (
-            <div key={r.url} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-[13.5px]">
-              <div className="min-w-0"><div className="font-semibold">{r.org || r.ai_org || '기관 확인 필요'}</div><div className="truncate text-sub">{r.title || r.ai_title} · {r.status}</div></div>
-              <button className={btnSoft} onClick={() => onPick(r.org || r.ai_org || q, r.url, r.title || r.ai_title || '')}>목표로 추가</button>
-            </div>
-          ))}
-        </div>
+      {(showAll || empty) && all && (
+        <>
+          <div className="mt-2 max-h-72 divide-y divide-line overflow-auto rounded-xl bg-white px-3">{all.results.map((i: any) => <Row key={i.name} i={i} />)}</div>
+          <p className="mt-1 text-[11.5px] text-sub">{all.total}개 · 중앙: {all.sources.central.name}({all.sources.central.checked_at} 기준 {all.sources.central.count}개) · 지방: {all.sources.local.note}</p>
+        </>
       )}
+      <p className="mt-2 text-[11.5px] text-sub">기관을 먼저 목표로 저장하고, 채용공고 조회는 저장 후 ‘공고 조회’에서 따로 진행해요.</p>
     </div>
   )
 }
@@ -313,7 +322,7 @@ function Edit({ onSaved }: { onSaved: () => void }) {
       <Section title="목표 기업" action={<Add onClick={() => setSearchOpen(!searchOpen)} />}>
         {searchOpen && (
           <TargetSearch
-            onPick={(org: string, url: string, title: string) => { add('targets', { company_id: COMP.find((c) => c.name === org)?.id || `org:${org}`, company_name: org, job_category: '', recruitment_type: '신입', priority: (p.targets?.length || 0) + 1, source_url: url, source_title: title, rules_verified: !!COMP.find((c) => c.name === org && c.id === 'korail') }); setSearchOpen(false) }}
+            onPick={(org: string, _url: string, _title: string, group?: string) => { add('targets', { company_id: COMP.find((c) => c.name === org)?.id || `org:${org}`, company_name: org, institution_group: group, job_category: '', recruitment_type: '신입', priority: (p.targets?.length || 0) + 1 }); setSearchOpen(false) }}
             onQuick={(id: string) => { add('targets', { company_id: id, company_name: COMP.find((c) => c.id === id)?.name, job_category: '', recruitment_type: '신입', priority: (p.targets?.length || 0) + 1 }); setSearchOpen(false) }}
           />
         )}
@@ -323,7 +332,7 @@ function Edit({ onSaved }: { onSaved: () => void }) {
             <input className={input} type="number" min={1} value={t.priority ?? i + 1} onChange={(e) => setIn('targets', i, 'priority', Number(e.target.value))} title="우선순위" />
             {COMP.find((c) => c.id === t.company_id)
               ? <select className={input} value={t.company_id} onChange={(e) => setIn('targets', i, 'company_id', e.target.value)}>{COMP.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-              : <div className="truncate rounded-xl border border-line bg-[#F8F7FC] px-3.5 py-2.5 text-[14px]" title={t.source_title}>{t.company_name || t.company_id}{t.source_url && <a href={t.source_url} target="_blank" rel="noreferrer" className="ml-2 text-[12px] text-accent-ink">공고</a>}</div>}
+              : <div className="truncate rounded-xl border border-line bg-[#F8F7FC] px-3.5 py-2.5 text-[14px]" title={t.source_title}>{t.company_name || t.company_id}<a href={`/jobs?q=${encodeURIComponent(t.company_name || '')}`} className="ml-2 text-[12px] text-accent-ink">공고 조회</a></div>}
             <input className={input} placeholder="직렬" value={t.job_category} onChange={(e) => setIn('targets', i, 'job_category', e.target.value)} />
             <select className={input} value={t.recruitment_type} onChange={(e) => setIn('targets', i, 'recruitment_type', e.target.value)}>{['신입', '인턴', '경력'].map((x) => <option key={x}>{x}</option>)}</select>
             <Del onClick={() => del('targets', i)} />

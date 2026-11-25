@@ -418,6 +418,12 @@ def analyze_posting(req: AnalyzeReq):
         return {"url": req.url, "status": "분석 실패", "message": f"{e.__class__.__name__}: {str(e)[:150]}", "stages": []}
 
 
+@app.get("/api/institutions")
+def institutions_search(q: str = "", group: str | None = None, limit: int = 20):
+    from .services import institutions
+    return institutions.search(q, group, 400 if not q.strip() else limit)
+
+
 @app.get("/api/plan")
 def plan(recruitment_id: str | None = None):
     from .services import planning
@@ -795,6 +801,26 @@ def chat_ask(req: ChatReq):
     if not req.recruitment_id and "하반기" in q:
         rid = "korail-2026H2-general"
     p = get_profile()
+    # '이번 주 할 일' → 로드맵·준비 계획 연결(AI 미호출)
+    if re.search(r"이번\s?주.{0,6}(할\s?일|목표|공부)|오늘\s?할\s?일|뭐\s?해야", q):
+        from .services import planning
+        rule = RULES[rid]
+        rm = get_roadmap()
+        lines, cits = [], []
+        if rm:
+            wk = next((w for w in rm["weeks"] if any(t["week"] == w["week"] and not t["done"] for t in rm["tasks"])), rm["weeks"][-1])
+            todo = [t for t in rm["tasks"] if t["week"] == wk["week"]]
+            lines = [f"{'☑' if t['done'] else '☐'} {t['title']} ({t['category']})" for t in todo]
+            head = f"{wk['week']}주차 · {wk['title']} — {sum(1 for t in todo if t['done'])}/{len(todo)} 완료"
+        else:
+            head = "아직 학습 로드맵이 없어요. 로드맵 탭에서 8주 로드맵을 만들면 주간 할 일이 생겨요."
+        pl = planning.build(rule, RULES, p, rag.recommend_certs(rule, p), screening.document_score(rule, p))
+        acts = [f"{a['title']}{' (' + a['due'] + '까지)' if a.get('due') else ''}" for a in pl["actions"][:3]]
+        return {"question": q, "answers": [{"scope": {"company": rule["company"], "job_category": rule["job_category"], "recruitment_id": rid,
+                                                       "recruitment_title": rule["recruitment_title"], "published_at": rule.get("published_at")},
+                                             "mode": "roadmap", "abstained": False, "retrieved": [], "citations": [],
+                                             "answer": {"summary": head, "lines": lines, "notes": (["먼저 할 일: " + " · ".join(acts)] if acts else []) + [f"공고 일정 기준: {pl['anchor']['kind']} — {pl['anchor']['basis']}"]}}],
+                "elapsed_ms": 0, "ai_enabled": ai_analyzer.ai_available(), "history_stored_on_server": False}
     # 개인정보 최소화: 실명/닉네임/학력 등은 전달하지 않고 계산에 필요한 자격증 목록만 사용
     min_profile = {"certificates": p.get("certificates", []), "birth_year": p.get("birth_year"),
                    "military_status": p.get("military_status"), "nationality": p.get("nationality"),

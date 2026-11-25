@@ -3,6 +3,11 @@ import { ArrowUp, ChevronDown, Loader2, MessageCircle, RotateCcw, X } from 'luci
 import { api } from '../api'
 import { EvidenceToggle } from './ui'
 
+const QUICK = [
+  { label: '내 가점 확인', q: '내 자격증 가점 몇 점이야?' },
+  { label: '자격증별 추가 가점', q: '기사 자격증 뭐 더 따면 좋아?' },
+  { label: '이번 주 할 일', q: '이번 주 할 일 알려줘' },
+]
 const SUGGEST = [
   '정보처리기사랑 SQLD 가점이 중복 인정돼?',
   '한국사 1급은 몇 점이야?',
@@ -14,7 +19,7 @@ const SUGGEST = [
 ]
 const KEY = 'pc-chat-v1'
 const MODE: Record<string, string> = {
-  rule_engine: '가점 규칙 엔진 계산', simulator: '가점 시뮬레이터 계산(현재 공고·내 스펙)', retrieval_only: '공식 원문 검색 결과', llm_grounded: 'AI 답변 · 인용 검증 통과', abstain: '답변 보류',
+  rule_engine: '가점 규칙 엔진 계산', roadmap: '학습 로드맵·준비 계획', simulator: '가점 시뮬레이터 계산(현재 공고·내 스펙)', retrieval_only: '공식 원문 검색 결과', llm_grounded: 'AI 답변 · 인용 검증 통과', abstain: '답변 보류',
 }
 
 export default function Chat() {
@@ -45,15 +50,15 @@ export default function Chat() {
     <>
       {!open && (
         <button onClick={() => setOpen(true)} className="fixed bottom-7 right-7 z-50 flex items-center gap-2 rounded-full bg-accent py-3 pl-4 pr-5 text-[14px] text-white shadow-[0_10px_30px_rgba(165,155,231,0.45)] hover:bg-[#9489de]">
-          <MessageCircle size={18} strokeWidth={1.8} />채용 상담
+          <MessageCircle size={18} strokeWidth={1.8} />AI 취업 에이전트
         </button>
       )}
       {open && (
         <div className="fixed bottom-6 right-6 z-50 flex h-[min(680px,calc(100vh-48px))] w-[min(420px,calc(100vw-32px))] flex-col rounded-[28px] bg-white shadow-[0_20px_60px_rgba(41,41,41,0.12)]">
           <div className="flex items-start justify-between px-6 pb-3 pt-5">
             <div>
-              <div className="text-[16px] font-semibold">채용 상담</div>
-              <div className="text-[12.5px] text-sub">공식 문서에서 찾은 근거로만 답해요</div>
+              <div className="text-[16px] font-semibold">AI 취업 에이전트</div>
+              <div className="text-[12.5px] text-sub">공식 공고·내 스펙 기준으로 계산하고 답해요</div>
             </div>
             <div className="flex gap-1">
               <button onClick={clear} title="대화 기록 삭제" className="rounded-full p-2 text-sub hover:bg-bg"><RotateCcw size={16} /></button>
@@ -72,7 +77,10 @@ export default function Chat() {
           <div className="flex-1 space-y-5 overflow-auto px-6 py-3">
             {msgs.length === 0 && (
               <div className="space-y-2 pt-2">
-                <div className="text-[12.5px] text-sub">이런 걸 물어볼 수 있어요</div>
+                <div className="grid grid-cols-3 gap-2 pb-2">
+                  {QUICK.map((x) => <button key={x.label} onClick={() => ask(x.q)} className="rounded-2xl bg-lav px-2 py-3 text-[13px] font-semibold text-accent-ink hover:bg-[#e6e0fb]">{x.label}</button>)}
+                </div>
+                <div className="text-[12.5px] text-sub">이런 것도 물어볼 수 있어요</div>
                 {SUGGEST.map((s) => <button key={s} onClick={() => ask(s)} className="block w-full rounded-2xl bg-bg px-4 py-2.5 text-left text-[13.5px] hover:bg-lav">{s}</button>)}
               </div>
             )}
@@ -83,7 +91,7 @@ export default function Chat() {
             <div ref={end} />
           </div>
           <form onSubmit={(e) => { e.preventDefault(); ask(q) }} className="m-4 flex items-center gap-2 rounded-full bg-bg py-1.5 pl-5 pr-1.5">
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="채용공고에 대해 질문해 보세요" className="flex-1 bg-transparent text-[14px] outline-none placeholder:text-[#b5b1a8]" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="가점·자격증·공고·할 일을 물어보세요" className="flex-1 bg-transparent text-[14px] outline-none placeholder:text-[#b5b1a8]" />
             <button disabled={busy || !q.trim()} className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-white disabled:opacity-40"><ArrowUp size={17} /></button>
           </form>
         </div>
