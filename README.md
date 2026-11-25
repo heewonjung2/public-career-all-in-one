@@ -15,6 +15,7 @@
 - 테스트 86건 통과. 상세 상태: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)
 
 ## 배포
+- **공개 웹앱: https://public-career-all-in-one.onrender.com/** (Render 무료 플랜 — 첫 접속 시 30~50초 대기 가능)
 - Docker 단일 컨테이너(`Dockerfile`). Render 등에서 `OPENAI_API_KEY` 환경변수만 설정하면 됩니다.
 - 공개 시연 서버(`PUBLIC_DEMO=1`)는 로그인 기능이 없어 입력 스펙이 방문자 간 공유될 수 있으므로 실제 개인정보를 입력하지 마세요. AI 호출은 IP당·전체 시간당 한도가 있습니다.
 
