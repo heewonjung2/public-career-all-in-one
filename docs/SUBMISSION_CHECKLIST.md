@@ -8,6 +8,8 @@
 | README (실행 방법) | [../README.md](../README.md) |
 | 프로젝트 기획서 | [PROJECT_PLAN.md](PROJECT_PLAN.md) |
 | 발표자료 | [PRESENTATION.md](PRESENTATION.md) |
+| 데이터 출처 · 개인정보 | [DATA_SOURCES.md](DATA_SOURCES.md), [PRIVACY_POLICY.md](PRIVACY_POLICY.md) |
+| RAG 평가 원본 | [rag_eval_results.json](rag_eval_results.json) |
 | 개발 프롬프트 | [DEVELOPMENT_PROMPTS.md](DEVELOPMENT_PROMPTS.md) (최초 요청서 전문 붙여넣기 필요) |
 | AI 분석 프롬프트 | [AI_ANALYSIS_PROMPTS.md](AI_ANALYSIS_PROMPTS.md) |
 | 테스트 결과 | [TEST_RESULTS.md](TEST_RESULTS.md) |

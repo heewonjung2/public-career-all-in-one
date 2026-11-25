@@ -1,0 +1,158 @@
+{
+ "id": "demo-correction",
+ "is_demo": true,
+ "company_id": "demo",
+ "company": "시연용 가상기관",
+ "recruitment_title": "시연용 가상기관 2026년 신입사원 채용 공고",
+ "notice_no": "[가상기관 2026-01호]",
+ "corrects_notice_no": null,
+ "recruitment_year": 2026,
+ "half": "상반기",
+ "recruitment_type": "신입",
+ "job_category": "전산(IT)",
+ "location": "가상",
+ "headcount": 10,
+ "published_at": "2026-02-25",
+ "official_source": {
+  "url": null,
+  "site": "시연용 가상 문서",
+  "verification_status": "demo",
+  "checked_at": null
+ },
+ "documents": {
+  "notice": {
+   "name": "demo_v1.pdf",
+   "url": null,
+   "local_file": "demo/correction_test/demo_v1.pdf"
+  }
+ },
+ "headcount_evidence": {
+  "doc": "notice",
+  "page": 1,
+  "quote": "모집 분야: 전산(IT) 10명"
+ },
+ "eligibility_rules": [
+  {
+   "id": "age",
+   "item": "연령",
+   "type": "birth_range",
+   "params": {
+    "born_after": "1900-01-01",
+    "born_before": "2009-01-01"
+   },
+   "rule_text": "연령 제한없음(2009.1.1. 이후 출생자 불가)",
+   "doc": "notice",
+   "page": 1,
+   "quote": "연령 제한없음(단, 2009. 1. 1.이후 출생자는 불가)"
+  },
+  {
+   "id": "education",
+   "item": "학력 및 전공",
+   "type": "no_limit",
+   "rule_text": "제한없음",
+   "doc": "notice",
+   "page": 1,
+   "quote": "학력 및 전공 제한없음"
+  }
+ ],
+ "score_policy": {
+  "evaluation_type": "필기 + 가점",
+  "applies_to_stage": "필기",
+  "grade_points": {
+   "기사": 4.0,
+   "산업기사": 2.5,
+   "기능사": 1.0,
+   "기술사": 5.5,
+   "기능장": 5.5
+  },
+  "general_cert": {
+   "category_caps": {
+    "공통직무": 2
+   },
+   "max_count": 2,
+   "max_points": 8,
+   "evidence": {
+    "doc": "notice",
+    "page": 1,
+    "quote": "자격증 가산점 (최대 2개, 최대 8점)"
+   }
+  },
+  "cert_total_cap": 8,
+  "same_kind_highest_only": true,
+  "reference_date": "2026-03-06",
+  "calculation_verified": true
+ },
+ "cert_catalog": [
+  {
+   "name": "정보처리기사",
+   "levels": [],
+   "kind": "정보처리",
+   "category": "공통직무",
+   "grade": "기사",
+   "doc": "notice",
+   "page": 1,
+   "quote": "정보처리기사 4.0점"
+  },
+  {
+   "name": "컴퓨터활용능력",
+   "levels": [
+    "1급"
+   ],
+   "kind": "컴퓨터활용능력",
+   "category": "공통직무",
+   "grade": "산업기사",
+   "doc": "notice",
+   "page": 1,
+   "quote": "컴퓨터활용능력 1급 2.5점"
+  },
+  {
+   "name": "한국사능력검정시험",
+   "levels": [
+    "1급"
+   ],
+   "kind": "한국사능력검정",
+   "category": "공통직무",
+   "grade": "산업기사",
+   "doc": "notice",
+   "page": 1,
+   "quote": "한국사능력검정시험 1급 2.5점"
+  }
+ ],
+ "written_exam": {
+  "ncs_subjects": [],
+  "major_subjects": [
+   "운영체제",
+   "데이터베이스",
+   "네트워크"
+  ],
+  "composition": {},
+  "question_count": null,
+  "evidence": []
+ },
+ "schedule": [
+  {
+   "type": "접수시작",
+   "date": "2026-03-02",
+   "label": "입사지원서 접수 시작",
+   "doc": "notice",
+   "page": 1,
+   "quote": "입사지원서 접수 2026. 3. 2."
+  },
+  {
+   "type": "접수마감",
+   "date": "2026-03-06",
+   "label": "입사지원서 접수 마감",
+   "doc": "notice",
+   "page": 1,
+   "quote": "~ 3. 6. 18:00"
+  },
+  {
+   "type": "필기",
+   "date": "2026-03-21",
+   "label": "필기시험",
+   "doc": "notice",
+   "page": 1,
+   "quote": "필기시험 2026. 3. 21.(토)"
+  }
+ ]
+}

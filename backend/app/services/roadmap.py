@@ -22,6 +22,31 @@ MAJOR_DETAIL = {
 }
 
 
+def from_strategy(opt: dict, weeks: int = 8) -> dict:
+    """통합 전략 최적화 결과(주간 시간 배분 + 선택 자격증)를 주차별 체크리스트로 변환."""
+    alloc = opt["weekly_allocation"]
+    certs = opt["certificates"]["chosen"]
+    plan = []
+    for w in range(1, weeks + 1):
+        tasks = []
+        for a in alloc:
+            s = a["subject"]
+            pool = NCS_DETAIL.get(s) or MAJOR_DETAIL.get(s) or [f"{s} 조문·개념 정리"]
+            detail = pool[(w - 1) % len(pool)]
+            tasks.append({"title": f"{s} {a['hours']:g}시간 · {detail}", "category": s})
+        for c in certs:
+            tasks.append({"title": f"{c} 자격증 준비 (전략 배정 시간)", "category": "자격증"})
+        if w >= weeks - 1:
+            tasks.append({"title": "실전 모의고사 + 오답 정리 (과목별 40% 과락 주의)", "category": "실전"})
+        plan.append({"week": w, "title": f"주 {opt['study_hours']:g}시간 배분 · {opt['strategy']['label']}", "tasks": tasks})
+    return {"generator": "strategy_optimizer", "label": f"통합 전략 최적화 결과 적용({opt['strategy']['label']})",
+            "summary": {"basis": "통합 취업 전략 최적화(한계효용 시간 배분 + 자격증 조합 완전탐색)",
+                        "weakest_ncs": [s["subject"] for s in opt["subjects"] if s["kind"] == "NCS"][:1],
+                        "weakest_major": [s["subject"] for s in opt["subjects"] if s["kind"] == "전공"][:3],
+                        "daily_hours": round(opt["inputs"]["weekly_hours"] / 7, 1), "not_in_scope_note": []},
+            "weeks": plan}
+
+
 def _priority(status: str) -> int:
     return LEVEL_SCORE.get(status, 0)
 

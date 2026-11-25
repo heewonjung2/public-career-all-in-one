@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .database import DATA_DIR, ROOT, connect, dumps, init_db, loads
-from .services import ai_analyzer, document_parser, engine, roadmap, source_verifier
+from .services import ai_analyzer, document_parser, engine, rag, roadmap, source_verifier, strategy, versions
 from .services.evidence_validator import page_text, validate_rulefile
 
 app = FastAPI(title="공기업 All-in-One API", version="0.1.0")
@@ -30,6 +30,7 @@ COMPANIES = [
      "data_status": "공식 공고 미등록 - 분석 데이터 없음"},
 ]
 
+MAIN_RID = "korail-2026H1-it"
 RULES: dict[str, dict] = {}
 VALIDATION: dict[str, dict] = {}
 
@@ -51,6 +52,8 @@ def load_rules() -> None:
 def startup() -> None:
     init_db()
     load_rules()
+    _seed_versions()
+    _rebuild_index()
     with connect() as c:
         if not c.execute("SELECT 1 FROM profile WHERE id=1").fetchone():
             demo = json.loads((DATA_DIR / "demo" / "demo_profile.json").read_text(encoding="utf-8"))
@@ -223,7 +226,7 @@ async def upload_pdf(file: UploadFile = File(...), source_url: str = Form("")):
     return document_view(doc_id) | {"duplicate": dup}
 
 
-@app.get("/api/documents/{doc_id}")
+@app.get("/api/documents/{doc_id:int}")
 def document_view(doc_id: int):
     with connect() as c:
         row = c.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
@@ -238,7 +241,7 @@ def document_view(doc_id: int):
             "ai_enabled": ai_analyzer.ai_available()}
 
 
-@app.post("/api/documents/{doc_id}/ai-extract")
+@app.post("/api/documents/{doc_id:int}/ai-extract")
 def ai_extract(doc_id: int, job_category: str | None = None):
     with connect() as c:
         row = c.execute("SELECT pages FROM documents WHERE id=?", (doc_id,)).fetchone()
@@ -445,6 +448,294 @@ def put_notify(body: dict):
     with connect() as c:
         c.execute("UPDATE notification_settings SET data=? WHERE id=1", (dumps(body),))
     return get_notify()
+
+
+# ================================================================== 고도화 1: 통합 취업 전략
+def _rules_by_company() -> dict[str, dict]:
+    """기업별 분석 가능한 최신 검증 공고 1건 (사용자 직렬과 일치하는 공고만)."""
+    out = {}
+    for r in RULES.values():
+        if r.get("analysis_supported", True) and r["official_source"].get("verification_status") in ("verified",):
+            out.setdefault(r["company_id"], r)
+    return out
+
+
+class StrategyReq(BaseModel):
+    targets: list[dict] | None = None
+    weekly_hours: float = 15
+    monthly_budget: float = 0
+    weeks: int = 16
+    strategy: str = "balanced"
+    include_interpretation: bool = False
+    cert_overrides: dict = {}
+
+
+def _targets_match(targets: list[dict]) -> tuple[dict, list[dict]]:
+    """사용자 목표 직렬과 공고 직렬이 다르면 기준을 사용하지 않음."""
+    rb, rules, extra_missing = _rules_by_company(), {}, []
+    for t in targets:
+        r = rb.get(t["company_id"])
+        if r and (not t.get("job_category") or engine._norm(t["job_category"]) == engine._norm(r["job_category"])):
+            rules[t["company_id"]] = r
+        elif r:
+            extra_missing.append({"company_id": t["company_id"], "job_category": t.get("job_category"),
+                                  "reason": f"등록된 공고 직렬({r['job_category']})과 목표 직렬이 달라 기준을 사용하지 않음"})
+    return rules, extra_missing
+
+
+@app.post("/api/strategy/optimize")
+def strategy_optimize(req: StrategyReq):
+    p = get_profile()
+    targets = req.targets or [dict(t, priority=t.get("priority", i + 1)) for i, t in enumerate(p.get("targets", []))]
+    rules, mism = _targets_match(targets)
+    res = strategy.optimize(rules, p, req.model_dump() | {"targets": targets})
+    names = {c["id"]: c["name"] for c in COMPANIES}
+    for m in res.get("missing", []) + mism:
+        m["company"] = names.get(m["company_id"], m["company_id"])
+    res["missing"] = [m for m in res.get("missing", []) if m["company_id"] not in {x["company_id"] for x in mism}] + mism
+    return res
+
+
+@app.post("/api/strategy/compare")
+def strategy_compare(req: StrategyReq):
+    out = {}
+    for key in strategy.STRATEGIES:
+        r = strategy_optimize(req.model_copy(update={"strategy": key}))
+        if r.get("available"):
+            out[key] = {"label": r["strategy"]["label"], "allocation": r["weekly_allocation"], "certificates": r["certificates"]["chosen"],
+                        "cert_value": r["certificates"]["value"]}
+    return out
+
+
+@app.get("/api/strategy/common-subjects")
+def strategy_subjects():
+    p = get_profile()
+    rules, _ = _targets_match(p.get("targets", []))
+    return strategy.subject_matrix(list(rules.values()), p)
+
+
+@app.post("/api/strategy/certificate-efficiency")
+def strategy_cert(req: StrategyReq):
+    r = strategy_optimize(req)
+    return r.get("certificates", {}).get("efficiency", [])
+
+
+@app.post("/api/strategy/apply-roadmap")
+def strategy_apply(req: StrategyReq):
+    opt = strategy_optimize(req)
+    if not opt.get("available"):
+        raise HTTPException(400, "적용할 전략 결과가 없습니다")
+    rm = roadmap.from_strategy(opt, max(1, min(req.weeks, 8)))
+    rid = opt["companies"][0]["recruitment_id"]
+    with connect() as c:
+        cur = c.execute("INSERT INTO roadmaps (recruitment_id, data, created_at) VALUES (?,?,?)", (rid, dumps(rm), now()))
+        for w in rm["weeks"]:
+            for t in w["tasks"]:
+                c.execute("INSERT INTO study_tasks (roadmap_id, week, title, category) VALUES (?,?,?,?)", (cur.lastrowid, w["week"], t["title"], t["category"]))
+    return get_roadmap()
+
+
+# ================================================================== 고도화 2: 공식 문서 RAG
+class ChatReq(BaseModel):
+    question: str
+    recruitment_id: str | None = None
+
+
+def _rebuild_index():
+    with connect() as c:
+        return rag.build_index(c, {k: v for k, v in RULES.items()}, DATA_DIR, {})
+
+
+@app.post("/api/documents/index")
+def documents_index():
+    return _rebuild_index()
+
+
+@app.get("/api/documents/search")
+def documents_search(q: str, recruitment_id: str = MAIN_RID, k: int = 5):
+    if recruitment_id not in RULES:
+        raise HTTPException(404)
+    with connect() as c:
+        return [rag._public(h) for h in rag.search(c, q, recruitment_id, k)]
+
+
+@app.get("/api/chat/sources")
+def chat_sources():
+    return [{"recruitment_id": r["id"], "company": r["company"], "job_category": r["job_category"], "title": r["recruitment_title"],
+             "published_at": r.get("published_at"), "status_note": r.get("status_note"), "default": r["id"] == MAIN_RID}
+            for r in RULES.values() if r["official_source"].get("verification_status") == "verified"]
+
+
+@app.post("/api/chat/ask")
+def chat_ask(req: ChatReq):
+    import time
+    t0 = time.perf_counter()
+    q = req.question.strip()[:500]
+    if not q:
+        raise HTTPException(400, "질문을 입력하세요")
+    mentioned = rag.detect_companies(q)
+    names = {c["id"]: c["name"] for c in COMPANIES}
+    rid = req.recruitment_id or MAIN_RID
+    if not req.recruitment_id and "하반기" in q:
+        rid = "korail-2026H2-general"
+    p = get_profile()
+    # 개인정보 최소화: 실명/닉네임/학력 등은 전달하지 않고 계산에 필요한 자격증 목록만 사용
+    min_profile = {"certificates": p.get("certificates", []), "birth_year": p.get("birth_year"),
+                   "military_status": p.get("military_status"), "nationality": p.get("nationality"),
+                   "self_declarations": p.get("self_declarations", {}), "intern": p.get("intern", {})}
+    answers = []
+    targets = mentioned or [RULES[rid]["company_id"]]
+    for cid in targets:
+        if cid == RULES[rid]["company_id"]:
+            rule = RULES[rid]
+        else:
+            rule = next((r for r in RULES.values() if r["company_id"] == cid), None)
+        if not rule:
+            answers.append({"scope": {"company": names.get(cid, cid)}, "mode": "abstain", "abstained": True, "retrieved": [], "citations": [],
+                            "answer": {"summary": f"{names.get(cid, cid)}의 검증된 공식 채용문서가 등록되어 있지 않아 답변할 수 없습니다.",
+                                       "next": ["공식 채용공고 등록 후 다시 질문"]}})
+            continue
+        with connect() as c:
+            answers.append(rag.ask(c, q, rule, min_profile))
+    return {"question": q, "answers": answers, "elapsed_ms": round((time.perf_counter() - t0) * 1000),
+            "ai_enabled": ai_analyzer.ai_available(), "history_stored_on_server": False}
+
+
+@app.delete("/api/chat/history")
+def chat_history_delete():
+    return {"deleted": True, "note": "대화 기록은 서버에 저장하지 않으며 브라우저 탭 세션에만 보관됩니다."}
+
+
+# ================================================================== 고도화 3: 정정 공고 버전·변경 감지
+def _seed_versions():
+    with connect() as c:
+        c.executescript(versions.SCHEMA)
+        for r in RULES.values():
+            if c.execute("SELECT 1 FROM recruitment_versions WHERE recruitment_id=?", (r["id"],)).fetchone():
+                continue
+            d = r["documents"]["notice"]
+            raw = (DATA_DIR / d["local_file"]).read_bytes()
+            pages = document_parser.extract_pages(raw)
+            c.execute("INSERT INTO recruitment_versions (recruitment_id, version_number, label, source_url, attachment_url, published_at, fetched_at, raw_file_hash, normalized_text_hash, verification_status, change_summary) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                      (r["id"], 1, "최초 공고", r["official_source"]["url"], d["url"], r.get("published_at"), r["official_source"].get("checked_at"),
+                       versions.sha(raw), versions.sha(versions.normalize_text(pages)), "verified", "최초 공고"))
+
+
+@app.get("/api/recruitments/{rid}/versions")
+def rec_versions(rid: str):
+    with connect() as c:
+        return [dict(x) for x in c.execute("SELECT * FROM recruitment_versions WHERE recruitment_id=? ORDER BY version_number", (rid,))]
+
+
+@app.get("/api/recruitments/{rid}/changes")
+def rec_changes(rid: str):
+    with connect() as c:
+        rows = [dict(x) for x in c.execute("SELECT * FROM recruitment_changes WHERE recruitment_id=? ORDER BY id DESC", (rid,))]
+        logs = [dict(x) for x in c.execute("SELECT * FROM collection_logs WHERE recruitment_id=? ORDER BY id DESC LIMIT 10", (rid,))]
+    for r in rows:
+        for k in ("items", "text_diff", "impact"):
+            r[k] = loads(r[k])
+    return {"changes": rows, "logs": logs, "scheduler": {"enabled": False,
+            "note": "로컬 실행 환경이라 정기 자동 확인(매일 09:00·18:00 KST)은 비활성. 수동 새로고침만 동작합니다."}}
+
+
+@app.post("/api/recruitments/{rid}/refresh")
+def rec_refresh(rid: str):
+    """공식 첨부파일을 다시 내려받아 최신 버전과 비교(실제 네트워크 요청)."""
+    if rid not in RULES:
+        raise HTTPException(404)
+    r = RULES[rid]
+    d = r["documents"]["notice"]
+    with connect() as c:
+        last = c.execute("SELECT * FROM collection_logs WHERE recruitment_id=? ORDER BY id DESC LIMIT 1", (rid,)).fetchone()
+        if last and last["checked_at"] > (datetime.now() - timedelta(minutes=1)).isoformat(timespec="seconds"):
+            raise HTTPException(429, "과도한 요청 방지: 1분 후 다시 시도하세요")
+        latest = c.execute("SELECT * FROM recruitment_versions WHERE recruitment_id=? ORDER BY version_number DESC LIMIT 1", (rid,)).fetchone()
+    try:
+        raw, final, _ = source_verifier.fetch_official(d["url"], r["company_id"])
+    except Exception as e:  # noqa: BLE001
+        with connect() as c:
+            c.execute("INSERT INTO collection_logs (recruitment_id, checked_at, status, detail) VALUES (?,?,?,?)", (rid, now(), "실패", f"{e.__class__.__name__}: {str(e)[:150]}"))
+        return {"status": "실패", "detail": str(e)[:200]}
+    pages = document_parser.extract_pages(raw) if raw[:4] == b"%PDF" else []
+    raw_h, txt_h = versions.sha(raw), versions.sha(versions.normalize_text(pages))
+    if raw_h == latest["raw_file_hash"]:
+        status = "변경 없음(동일 파일)"
+    elif txt_h == latest["normalized_text_hash"]:
+        status = "변경 없음(메타데이터만 다름)"
+    else:
+        status = "내용 변경 감지 - 확인 필요(새 버전 규칙 미검증)"
+        with connect() as c:
+            c.execute("INSERT INTO recruitment_versions (recruitment_id, version_number, label, source_url, attachment_url, fetched_at, raw_file_hash, normalized_text_hash, previous_version_id, verification_status, change_summary) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                      (rid, latest["version_number"] + 1, "변경 감지본", r["official_source"]["url"], final, now(), raw_h, txt_h, latest["id"], "needs_review", status))
+            c.execute("INSERT OR IGNORE INTO notifications (dedupe_key, recruitment_id, title, body, severity, created_at) VALUES (?,?,?,?,?,?)",
+                      (f"{rid}:{txt_h}", rid, f"{r['company']} 공고 내용 변경 감지", "공식 첨부파일 내용이 바뀌었습니다. 변경 이력을 확인해 주세요.", "매우 중요", now()))
+    with connect() as c:
+        c.execute("INSERT INTO collection_logs (recruitment_id, checked_at, status, detail) VALUES (?,?,?,?)", (rid, now(), status, f"최종 URL {final}"))
+    return {"status": status, "raw_hash": raw_h[:16], "text_hash": txt_h[:16], "checked_at": now()}
+
+
+@app.get("/api/recruitments/{rid}/impact")
+def rec_impact(rid: str):
+    if rid != "demo-correction":
+        return {"items": [], "note": "검증된 정정 공고가 없어 영향 분석 대상이 없습니다."}
+    return demo_correction()["impact"]
+
+
+def _load_demo():
+    base = DATA_DIR / "demo" / "correction_test"
+    a = json.loads((base / "demo_rule_v1.json").read_text(encoding="utf-8"))
+    b = json.loads((base / "demo_rule_v2.json").read_text(encoding="utf-8"))
+    for rr in (a, b):
+        rr["validation"] = validate_rulefile(rr, DATA_DIR)
+    return a, b
+
+
+@app.get("/api/demo/correction")
+def demo_correction():
+    """시연용 가상 테스트 문서 A/B 비교 (실제 기관 데이터와 분리)."""
+    a, b = _load_demo()
+    base = DATA_DIR / "demo" / "correction_test"
+    ra, rb, rm = (base / "demo_v1.pdf").read_bytes(), (base / "demo_v2.pdf").read_bytes(), (base / "demo_v1_meta.pdf").read_bytes()
+    pa, pb, pm = (document_parser.extract_pages(x) for x in (ra, rb, rm))
+    same = versions.same_recruitment(a, b)
+    files = versions.compare_files(ra, rb, pa, pb)
+    meta = versions.compare_files(ra, rm, pa, pm)
+    items = versions.rule_diff(a, b) if same["decision"] == "same" else []
+    imp = versions.impact(a, b, get_profile(), items)
+    key = "demo:" + versions.sha(json.dumps(items, ensure_ascii=False))[:16]
+    with connect() as c:
+        if items:
+            top = items[0]
+            c.execute("INSERT OR IGNORE INTO notifications (dedupe_key, recruitment_id, title, body, severity, created_at, is_demo) VALUES (?,?,?,?,?,?,1)",
+                      (key, "demo-correction", "[시연용] 가상기관 정정 공고: " + top["field"].split(":")[0] + " 변경",
+                       f"변경 {len(items)}건 감지. 내 스펙 분석 결과를 다시 확인해 주세요.", top["severity"], now()))
+    return {"is_demo": True, "label": "시연용 가상 테스트 문서 - 실제 기관의 정정 공고가 아님",
+            "versions": [{"version": 1, "title": a["recruitment_title"], "notice_no": a["notice_no"], "published_at": a["published_at"], "evidence_check": a["validation"]},
+                         {"version": 2, "title": b["recruitment_title"], "notice_no": b["notice_no"], "published_at": b["published_at"], "evidence_check": b["validation"]}],
+            "same_recruitment": same, "file_compare": {k: v for k, v in files.items() if k != "diff"},
+            "metadata_only_compare": {k: v for k, v in meta.items() if k != "diff"},
+            "text_diff": files["diff"], "items": items, "impact": imp, "detected_at": now()}
+
+
+@app.get("/api/recruitments/compare-link/{a}/{b}")
+def compare_link(a: str, b: str):
+    if a not in RULES or b not in RULES:
+        raise HTTPException(404)
+    return versions.same_recruitment(RULES[a], RULES[b])
+
+
+@app.get("/api/notifications")
+def notifications():
+    with connect() as c:
+        return [dict(x) for x in c.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT 30")]
+
+
+@app.patch("/api/notifications/{nid}/read")
+def notification_read(nid: int):
+    with connect() as c:
+        c.execute("UPDATE notifications SET read=1 WHERE id=?", (nid,))
+    return notifications()
 
 
 # ------------------------------------------------------------------ 프론트엔드 정적 파일(빌드 후)

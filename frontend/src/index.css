@@ -2,12 +2,24 @@
 
 @theme {
   --font-sans: "Pretendard", system-ui, -apple-system, "Malgun Gothic", sans-serif;
-  --color-brand-50: #eef4ff;
-  --color-brand-100: #dbe6ff;
-  --color-brand-500: #2f5fd0;
-  --color-brand-600: #2349a8;
-  --color-brand-700: #1b3780;
-  --color-navy: #0f1e3d;
+  --color-bg: #FAF9F6;
+  --color-ink: #292929;
+  --color-sub: #858585;
+  --color-line: #EEECE8;
+  --color-accent: #A59BE7;
+  --color-accent-ink: #6E61C8;
+  --color-lav: #F0EDFC;
+  --color-sage: #E3EFE6;
+  --color-sage-ink: #4F8A5B;
+  --color-butter: #FFF3D6;
+  --color-butter-ink: #A9781B;
+  --color-rose: #FBEAEA;
+  --color-rose-ink: #B85C5C;
 }
 
-body { @apply bg-slate-50 text-slate-800 antialiased; }
+html { background: var(--color-bg); }
+body { @apply bg-bg text-ink antialiased; font-size: 15px; line-height: 1.7; letter-spacing: -0.01em; }
+h1, h2, h3 { letter-spacing: -0.02em; }
+::selection { background: var(--color-lav); }
+details > summary { list-style: none; cursor: pointer; }
+details > summary::-webkit-details-marker { display: none; }
