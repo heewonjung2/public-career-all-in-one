@@ -689,8 +689,9 @@ def strategy_optimize(req: StrategyReq):
     targets = req.targets or [dict(t, priority=t.get("priority", i + 1)) for i, t in enumerate(p.get("targets", []))]
     rules, mism = _targets_match(targets)
     res = strategy.optimize(rules, p, req.model_dump() | {"targets": targets})
-    names = {c["id"]: c["name"] for c in COMPANIES}
+    names = {c["id"]: c["name"] for c in COMPANIES} | {t["company_id"]: t.get("company_name") for t in targets if t.get("company_name")}
     for m in res.get("missing", []) + mism:
+        m["reason"] = "공식 공고는 확인 가능하지만 가점 규칙 검토·승인 전이라 가점 분석 준비 중" if str(m["company_id"]).startswith("org:") else m["reason"]
         m["company"] = names.get(m["company_id"], m["company_id"])
     res["missing"] = [m for m in res.get("missing", []) if m["company_id"] not in {x["company_id"] for x in mism}] + mism
     return res

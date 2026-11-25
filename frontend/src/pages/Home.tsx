@@ -90,15 +90,14 @@ export default function Home() {
       {/* ================= 왼쪽 68% ================= */}
       <div className="min-w-0 space-y-6">
         {/* 환영 */}
-        <section className="relative flex items-center justify-between overflow-hidden rounded-[20px] bg-white/0 px-1 pt-1">
-          <div>
-            <div className="text-[14px] text-sub">{d.getMonth() + 1}월 {d.getDate()}일 ({DAYS[d.getDay()]})</div>
-            <h1 className="mt-1.5 text-[28px] font-bold leading-tight">{p.nickname || '준비생'}님, 오늘도 한 걸음 더!</h1>
-            <p className="mt-1.5 text-[15px] text-sub">목표하는 공기업 합격까지, 오늘도 차근차근 준비해요.</p>
-          </div>
-          <div className="relative mr-2 hidden h-[104px] w-[104px] shrink-0 sm:block">
-            <div className="absolute inset-0 rounded-full bg-lav" />
-            <img src="/chick.png" alt="사원증을 멘 병아리" className="relative h-full w-full object-contain p-1" />
+        <section className="px-1 pt-1">
+          <div className="text-[14px] text-sub">{d.getMonth() + 1}월 {d.getDate()}일 ({DAYS[d.getDay()]})</div>
+          <div className="mt-2 flex items-center gap-4">
+            <img src="/chick.png" alt="사원증을 멘 병아리" className="h-16 w-16 shrink-0 object-contain" />
+            <div>
+              <h1 className="text-[27px] font-bold leading-tight">{p.nickname || '준비생'}님, 오늘도 한 걸음 더!</h1>
+              <p className="mt-1 text-[15px] text-sub">목표하는 공기업 합격까지, 오늘도 차근차근 준비해요.</p>
+            </div>
           </div>
         </section>
 
@@ -163,6 +162,30 @@ export default function Home() {
           </section>
         </div>
 
+        {/* 내 목표 기업 */}
+        <section className="card px-7 py-6">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2"><Target size={18} className="text-accent" /><h2 className="text-[17px] font-bold">내 목표 기업</h2></div>
+            <Link to="/spec?tab=edit" className="inline-flex items-center gap-1 text-[13.5px] text-accent-ink">목표 추가·수정 <ArrowRight size={14} /></Link>
+          </div>
+          <div className="divide-y divide-line">
+            {[...(p.targets || [])].sort((x: any, y: any) => (x.priority || 99) - (y.priority || 99)).map((t: any, i: number) => {
+              const name = t.company_name || ({ korail: '한국철도공사', kepco: '한국전력공사', seoulmetro: '서울교통공사' } as any)[t.company_id] || t.company_id
+              const analyzed = a && a.recruitment.company_id === t.company_id
+              return (
+                <div key={i} className="grid items-center gap-2 py-3 sm:grid-cols-[34px_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
+                  <span className="text-[13px] font-semibold text-accent-ink">{t.priority || i + 1}순위</span>
+                  <span className="flex items-center gap-2.5 text-[14.5px] font-semibold"><CompanyMark name={name} size={28} />{name}</span>
+                  <span className="text-[13.5px] text-sub">{t.job_category || '직렬 미입력'} · {t.recruitment_type || '-'}</span>
+                  <span className="text-[13.5px]">{analyzed ? <span className="text-ink">가점 {a.bonus.total_confirmed}점 · {a.rule_version?.type === '사전예고' ? '2027 사전예고' : '확정 공고'}</span> : <span className="text-butter-ink">가점 분석 준비 중</span>}
+                    {t.source_url && <a href={t.source_url} target="_blank" rel="noreferrer" className="ml-2 text-[12.5px] text-accent-ink">공식 공고</a>}</span>
+                </div>
+              )
+            })}
+            {!(p.targets || []).length && <p className="py-3 text-[14px] text-sub">아직 목표 기업이 없어요. 내 스펙에서 기업을 검색해 추가해 보세요.</p>}
+          </div>
+        </section>
+
         {/* 관심 기업 최신 공고 */}
         <section className="card px-7 py-6">
           <div className="mb-3 flex items-center justify-between">
@@ -196,7 +219,7 @@ export default function Home() {
               <ul className="mt-4 space-y-2.5">
                 {weekTasks.slice(0, 6).map((t: any) => (
                   <li key={t.id}><button onClick={() => toggle(t)} className="flex w-full items-start gap-2.5 text-left text-[14px]">
-                    <span className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border ${t.done ? 'border-accent bg-accent text-white' : 'border-[#CFC8E8] bg-white'}`}>{t.done && <Check size={12} strokeWidth={3} />}</span>
+                    <span className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border ${t.done ? 'border-accent bg-accent text-white' : 'border-[#CFC8E8] bg-white'}`}>{!!t.done && <Check size={12} strokeWidth={3} />}</span>
                     <span className={t.done ? 'text-sub line-through' : ''}>{t.title}</span>
                   </button></li>
                 ))}

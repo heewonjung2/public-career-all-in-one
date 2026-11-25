@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ArrowUpRight, Plus, X } from 'lucide-react'
 import { api } from '../api'
-import { ErrorBox, EvidenceToggle, Loading, Note, Section, Sheet, Status, Tabs, btnLine, btnPrimary, input, useApi } from '../components/ui'
+import { ErrorBox, EvidenceToggle, Loading, Note, Section, Sheet, Status, Tabs, btnLine, btnPrimary, btnSoft, input, useApi } from '../components/ui'
 
 export default function Spec() {
   const [sp, setSp] = useSearchParams()
@@ -236,6 +236,41 @@ const NCS = ['의사소통능력', '수리능력', '문제해결능력']
 const MAJOR = ['운영체제', '데이터베이스', '데이터통신', '소프트웨어공학', '정보보호개론', '컴퓨터구조', '자료구조', '알고리즘', '인공지능']
 const COMP = [{ id: 'korail', name: '한국철도공사' }, { id: 'kepco', name: '한국전력공사' }, { id: 'seoulmetro', name: '서울교통공사' }]
 
+function TargetSearch({ onPick, onQuick }: { onPick: (org: string, url: string, title: string) => void; onQuick: (id: string) => void }) {
+  const [q, setQ] = useState('')
+  const [res, setRes] = useState<any>(null)
+  const [busy, setBusy] = useState(false)
+  const go = async (e?: any) => {
+    e?.preventDefault(); if (!q.trim()) return
+    setBusy(true); setRes(null)
+    try { setRes(await api('/search/postings', { method: 'POST', json: { q } })) } catch (er: any) { setRes({ results: [], message: er.message }) } finally { setBusy(false) }
+  }
+  return (
+    <div className="mb-4 rounded-2xl border border-[#E2DBFA] bg-[#FBFAFF] p-4">
+      <form onSubmit={go} className="flex gap-2">
+        <input className={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder="기업명 검색 (예: 한국공항공사)" />
+        <button className={btnPrimary} disabled={busy || !q.trim()}>{busy ? '검색 중…' : '검색'}</button>
+      </form>
+      <div className="mt-2 flex flex-wrap gap-2 text-[12.5px]">
+        <span className="text-sub">빠른 선택</span>
+        {COMP.map((c) => <button key={c.id} onClick={() => onQuick(c.id)} className="rounded-full bg-white px-3 py-1 hover:bg-lav">{c.name}</button>)}
+      </div>
+      {busy && <p className="mt-2 text-[12.5px] text-sub">공식 채용 사이트를 검색하고 공고 페이지를 확인 중이에요(최대 1~2분, 같은 기관은 다음부터 바로 나와요).</p>}
+      {res?.message && <p className="mt-2 text-[12.5px] text-butter-ink">{res.message}</p>}
+      {res?.results?.length > 0 && (
+        <div className="mt-3 divide-y divide-line">
+          {res.results.map((r: any) => (
+            <div key={r.url} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-[13.5px]">
+              <div className="min-w-0"><div className="font-semibold">{r.org || r.ai_org || '기관 확인 필요'}</div><div className="truncate text-sub">{r.title || r.ai_title} · {r.status}</div></div>
+              <button className={btnSoft} onClick={() => onPick(r.org || r.ai_org || q, r.url, r.title || r.ai_title || '')}>목표로 추가</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function F({ label, children }: { label: string; children: ReactNode }) {
   return <label className="block"><span className="mb-1.5 block text-[12.5px] text-sub">{label}</span>{children}</label>
 }
@@ -243,6 +278,7 @@ function F({ label, children }: { label: string; children: ReactNode }) {
 function Edit({ onSaved }: { onSaved: () => void }) {
   const [p, setP] = useState<any>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
   useEffect(() => { api('/profile').then(setP).catch((e) => setErr(e.message)) }, [])
   if (err) return <ErrorBox error={err} />
   if (!p) return <Loading />
@@ -274,11 +310,20 @@ function Edit({ onSaved }: { onSaved: () => void }) {
           <F label="목표 시기"><input className={input} value={p.target_period || ''} onChange={(e) => set('target_period', e.target.value)} /></F>
         </div>
       </Section>
-      <Section title="목표 기업" action={<Add onClick={() => add('targets', { company_id: 'korail', job_category: '', recruitment_type: '신입', priority: (p.targets?.length || 0) + 1 })} />}>
+      <Section title="목표 기업" action={<Add onClick={() => setSearchOpen(!searchOpen)} />}>
+        {searchOpen && (
+          <TargetSearch
+            onPick={(org: string, url: string, title: string) => { add('targets', { company_id: COMP.find((c) => c.name === org)?.id || `org:${org}`, company_name: org, job_category: '', recruitment_type: '신입', priority: (p.targets?.length || 0) + 1, source_url: url, source_title: title, rules_verified: !!COMP.find((c) => c.name === org && c.id === 'korail') }); setSearchOpen(false) }}
+            onQuick={(id: string) => { add('targets', { company_id: id, company_name: COMP.find((c) => c.id === id)?.name, job_category: '', recruitment_type: '신입', priority: (p.targets?.length || 0) + 1 }); setSearchOpen(false) }}
+          />
+        )}
+        <div className="mb-2 hidden grid-cols-[70px_1fr_1fr_90px_36px] gap-2 px-1 text-[12px] text-sub sm:grid"><span>우선순위</span><span>기업</span><span>직렬 (공고 기준 명칭)</span><span>채용 유형</span><span /></div>
         {(p.targets || []).map((t: any, i: number) => (
-          <div key={i} className="mb-2 grid grid-cols-[70px_1fr_1fr_90px_36px] gap-2">
+          <div key={i} className="mb-2 grid grid-cols-[70px_1fr_1fr_90px_36px] items-center gap-2">
             <input className={input} type="number" min={1} value={t.priority ?? i + 1} onChange={(e) => setIn('targets', i, 'priority', Number(e.target.value))} title="우선순위" />
-            <select className={input} value={t.company_id} onChange={(e) => setIn('targets', i, 'company_id', e.target.value)}>{COMP.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            {COMP.find((c) => c.id === t.company_id)
+              ? <select className={input} value={t.company_id} onChange={(e) => setIn('targets', i, 'company_id', e.target.value)}>{COMP.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+              : <div className="truncate rounded-xl border border-line bg-[#F8F7FC] px-3.5 py-2.5 text-[14px]" title={t.source_title}>{t.company_name || t.company_id}{t.source_url && <a href={t.source_url} target="_blank" rel="noreferrer" className="ml-2 text-[12px] text-accent-ink">공고</a>}</div>}
             <input className={input} placeholder="직렬" value={t.job_category} onChange={(e) => setIn('targets', i, 'job_category', e.target.value)} />
             <select className={input} value={t.recruitment_type} onChange={(e) => setIn('targets', i, 'recruitment_type', e.target.value)}>{['신입', '인턴', '경력'].map((x) => <option key={x}>{x}</option>)}</select>
             <Del onClick={() => del('targets', i)} />

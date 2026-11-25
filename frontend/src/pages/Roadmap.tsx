@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Check } from 'lucide-react'
+import { Check, RefreshCw } from 'lucide-react'
 import { api } from '../api'
-import { Bar, Empty, ErrorBox, EvidenceToggle, Loading, Note, Section, Sheet, Status, Tabs, btnPrimary, btnSoft, useApi } from '../components/ui'
+import { ErrorBox, EvidenceToggle, Loading, Note, Section, Sheet, Status, Tabs, btnPrimary, useApi } from '../components/ui'
 
 export default function Roadmap() {
   const [sp, setSp] = useSearchParams()
@@ -15,53 +15,114 @@ export default function Roadmap() {
   )
 }
 
+function chip(cat: string) {
+  const c = cat || ''
+  if (c.startsWith('NCS')) return { cls: 'bg-lav text-accent-ink', label: c.replace('NCS·', 'NCS ') }
+  if (c.startsWith('전공')) return { cls: 'bg-sage text-sage-ink', label: c.replace('전공·', '전공 ') }
+  if (c.includes('법령')) return { cls: 'bg-sky text-[#2f6fb3]', label: c }
+  return { cls: 'bg-butter text-butter-ink', label: c }
+}
+
 function Plan() {
   const rm = useApi<any>('/roadmaps')
+  const act = useApi<any>('/active')
   const [busy, setBusy] = useState(false)
   const create = async () => { setBusy(true); try { rm.setData(await api('/roadmaps', { method: 'POST', json: { weeks: 8 } })) } finally { setBusy(false) } }
-  const toggle = async (t: any) => rm.setData(await api(`/tasks/${t.id}`, { method: 'PATCH', json: { done: !t.done } }))
+  const toggle = async (t: any) => {
+    // 즉시 반영(낙관적 갱신) 후 서버 저장 결과로 교체
+    rm.setData((prev: any) => {
+      if (!prev) return prev
+      const tasks = prev.tasks.map((x: any) => (x.id === t.id ? { ...x, done: x.done ? 0 : 1 } : x))
+      const done = tasks.filter((x: any) => x.done).length
+      return { ...prev, tasks, progress: { done, total: tasks.length, percent: tasks.length ? Math.round((done * 100) / tasks.length) : 0 } }
+    })
+    try { rm.setData(await api(`/tasks/${t.id}`, { method: 'PATCH', json: { done: !t.done } })) } catch { rm.reload() }
+  }
   if (rm.loading) return <Loading />
   if (rm.error) return <ErrorBox error={rm.error} />
   const d = rm.data
-  if (!d) return <Empty>아직 로드맵이 없어요. <button className="text-accent-ink" onClick={create}>8주 로드맵 만들기</button></Empty>
+  if (!d) return (
+    <div className="card mx-auto max-w-lg px-8 py-10 text-center">
+      <img src="/chick.png" alt="" className="mx-auto h-20 w-20" />
+      <p className="mt-3 text-[15px]">아직 학습 로드맵이 없어요.</p>
+      <button className={`${btnPrimary} mt-4`} onClick={create} disabled={busy}>8주 로드맵 만들기</button>
+    </div>
+  )
+  const pct = d.progress.percent
+  const R = 62, C = 2 * Math.PI * R
   return (
-    <div className="grid gap-x-16 gap-y-10 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="space-y-8">
+    <div className="pb-24">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="text-[13px] text-sub">전체 진척</div>
-          <div className="mt-1 text-[40px] font-semibold leading-none">{d.progress.percent}<span className="text-[16px] font-normal text-sub">%</span></div>
-          <div className="mt-4"><Bar value={d.progress.percent} /></div>
-          <div className="mt-2 text-[12.5px] text-sub">완료 과제 {d.progress.done} / {d.progress.total}</div>
+          <h1 className="text-[30px] font-bold">학습 로드맵</h1>
+          <p className="mt-1 text-[15px] text-sub">{act.data ? `${act.data.company} ${act.data.job_category} 필기 준비 · ${act.data.year} ${act.data.type === '사전예고' ? '사전예고 기준' : '확정 공고 기준'}` : ''}</p>
         </div>
-        <div className="space-y-1 text-[13.5px] text-sub">
-          <div>{d.label}</div>
-          <div>{d.summary.basis}</div>
-          {d.summary.not_in_scope_note?.length > 0 && <div>출제범위 밖(우선순위 낮춤): {d.summary.not_in_scope_note.join(', ')}</div>}
+        <button onClick={create} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-accent bg-white px-5 py-2.5 text-[14.5px] font-semibold text-accent-ink hover:bg-lav"><RefreshCw size={16} className={busy ? 'animate-spin' : ''} />로드맵 다시 만들기</button>
+      </div>
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="order-2 space-y-5 lg:order-1">
+          {d.weeks.map((w: any) => {
+            const tasks = d.tasks.filter((t: any) => t.week === w.week)
+            const done = tasks.filter((t: any) => t.done).length
+            const ratio = tasks.length ? (done / tasks.length) * 100 : 0
+            return (
+              <section key={w.week} id={`week-${w.week}`} className="card scroll-mt-24 overflow-hidden">
+                <div className="flex items-center gap-4 bg-lav px-6 py-3.5">
+                  <h2 className="text-[19px] font-bold">{w.week}주차</h2>
+                  <div className="ml-auto hidden h-2 w-44 rounded-full bg-white sm:block"><div className="h-2 rounded-full bg-accent transition-all" style={{ width: `${ratio}%` }} /></div>
+                  <span className="ml-auto text-[14px] text-sub sm:ml-0">{done}/{tasks.length} 완료</span>
+                </div>
+                <div className="h-1 bg-white sm:hidden"><div className="h-1 bg-accent transition-all" style={{ width: `${ratio}%` }} /></div>
+                <div className="px-6 pb-3 pt-4">
+                  <h3 className="mb-1 text-[17px] font-bold">{w.title}</h3>
+                  <ul className="divide-y divide-line">
+                    {tasks.map((t: any) => {
+                      const c = chip(t.category)
+                      return (
+                        <li key={t.id}>
+                          <button onClick={() => toggle(t)} aria-pressed={!!t.done} className="flex w-full flex-col gap-1.5 py-3 text-left sm:flex-row sm:items-center sm:gap-3">
+                            <span className="flex flex-1 items-center gap-3">
+                              <span className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] border-2 transition ${t.done ? 'border-accent bg-accent text-white' : 'border-[#CBC4E6] bg-white'}`}>{!!t.done && <Check size={14} strokeWidth={3} />}</span>
+                              <span className={`text-[15px] ${t.done ? 'text-sub line-through' : ''}`}>{t.title}</span>
+                            </span>
+                            <span className={`ml-[34px] w-fit shrink-0 rounded-lg px-2.5 py-1 text-[12.5px] font-medium sm:ml-0 ${c.cls}`}>{c.label}</span>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              </section>
+            )
+          })}
         </div>
-        <button className={btnSoft} onClick={create} disabled={busy}>규칙 기반으로 다시 만들기</button>
-      </aside>
-      <div className="space-y-12">
-        {d.weeks.map((w: any) => {
-          const tasks = d.tasks.filter((t: any) => t.week === w.week)
-          const done = tasks.filter((t: any) => t.done).length
-          return (
-            <section key={w.week} className="grid gap-4 sm:grid-cols-[70px_1fr]">
-              <div className="text-[13px] text-sub">{w.week}주차<div className="text-[12px] text-[#b0aca3]">{done}/{tasks.length}</div></div>
-              <div>
-                <div className="mb-3 text-[16px]">{w.title}</div>
-                <ul className="space-y-2.5">
-                  {tasks.map((t: any) => (
-                    <li key={t.id}><button onClick={() => toggle(t)} className="flex w-full items-start gap-3 text-left text-[14px]">
-                      <span className={`mt-1 flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-md border ${t.done ? 'border-accent bg-accent text-white' : 'border-[#d6d2c9] bg-white'}`}>{t.done && <Check size={12} strokeWidth={3} />}</span>
-                      <span className={`flex-1 ${t.done ? 'text-sub line-through' : ''}`}>{t.title}</span>
-                      <span className="shrink-0 text-[12px] text-[#b0aca3]">{t.category}</span>
-                    </button></li>
-                  ))}
-                </ul>
+        <aside className="order-1 space-y-5 lg:sticky lg:top-24 lg:order-2">
+          <section className="card px-6 py-6">
+            <h2 className="text-[19px] font-bold">전체 진행률</h2>
+            <div className="relative mx-auto mt-4 h-[160px] w-[160px]">
+              <svg viewBox="0 0 160 160" className="h-full w-full -rotate-90">
+                <circle cx="80" cy="80" r={R} fill="none" stroke="#F1EDFD" strokeWidth="14" />
+                <circle cx="80" cy="80" r={R} fill="none" stroke="#A594F0" strokeWidth="14" strokeLinecap="round" strokeDasharray={`${(pct / 100) * C} ${C}`} className="transition-all" />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center"><div className="text-[34px] font-bold leading-none">{pct}%</div><div className="mt-1 text-[13px] text-sub">{d.progress.done}/{d.progress.total}개 완료</div></div>
+            </div>
+            <p className="mt-3 text-center text-[12px] text-sub">완료한 과제 수 기준</p>
+            <div className="mt-5 border-t border-line pt-4">
+              <div className="mb-2 text-[14.5px] font-bold">주차별 이동</div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {d.weeks.map((w: any) => {
+                  const tasks = d.tasks.filter((t: any) => t.week === w.week)
+                  const all = tasks.length > 0 && tasks.every((t: any) => t.done)
+                  return <a key={w.week} href={`#week-${w.week}`} className={`rounded-lg py-1.5 text-center text-[13.5px] ${all ? 'bg-sage text-sage-ink' : 'hover:bg-lav'}`}>{w.week}주차</a>
+                })}
               </div>
-            </section>
-          )
-        })}
+            </div>
+          </section>
+          <div className="space-y-1 px-1 text-[12.5px] text-sub">
+            <div>{d.label}</div>
+            <div className="flex flex-wrap gap-1.5 pt-1"><span className="rounded-md bg-lav px-2 py-0.5 text-accent-ink">NCS</span><span className="rounded-md bg-sage px-2 py-0.5 text-sage-ink">전공</span><span className="rounded-md bg-sky px-2 py-0.5 text-[#2f6fb3]">철도법령</span><span className="rounded-md bg-butter px-2 py-0.5 text-butter-ink">실전·복습</span></div>
+          </div>
+        </aside>
       </div>
     </div>
   )
