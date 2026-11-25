@@ -4,7 +4,7 @@ import { AlertCircle, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown
 import { api } from '../api'
 import { ErrorBox, Loading, today, useApi } from '../components/ui'
 import MiniCalendar, { EVENT_TONE } from '../components/MiniCalendar'
-import { COMP, TargetSearch } from './Spec'
+import { PostingFlow, TargetPicker } from '../components/TargetFlow'
 import { NowActions } from '../components/PlanPanel'
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토']
@@ -62,8 +62,16 @@ export default function Home() {
   const [rid, setRid] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [picker, setPicker] = useState(false)
+  const [scope, setScope] = useState<any>(null)
+  const [mkBusy, setMkBusy] = useState(false)
 
-  useEffect(() => { api('/active').then((x) => setRid(x.recruitment_id)).catch((e) => setErr(e.message)); api('/roadmaps').then(setRm).catch(() => {}) }, [])
+  useEffect(() => { api('/active').then((x) => setRid(x.recruitment_id)).catch((e) => setErr(e.message)); api('/roadmaps').then(setRm).catch(() => {}); api('/target/scope').then(setScope).catch(() => {}) }, [])
+  const refreshAll = async () => {
+    setPicker(false)
+    const [pr, ac, sc, r] = await Promise.all([api('/profile'), api('/active'), api('/target/scope'), api('/roadmaps').catch(() => null)])
+    profile.setData(pr); setScope(sc); setRm(r); setRid(ac.recruitment_id)
+  }
+  const makeRoadmap = async () => { setMkBusy(true); try { await api('/roadmaps', { method: 'POST', json: { weeks: 8 } }); await refreshAll() } finally { setMkBusy(false) } }
   useEffect(() => {
     if (!rid) return
     setA(null); setSt(null)
@@ -71,29 +79,14 @@ export default function Home() {
     api(`/stats/position?recruitment_id=${rid}`).then(setSt).catch(() => {})
   }, [rid])
   const choose = async (id: string) => { await api('/active', { method: 'PUT', json: { recruitment_id: id } }); setRid(id) }
-  const saveProfile = async (np: any) => { const { _updated_at, ...body } = np; profile.setData(await api('/profile', { method: 'PUT', json: body })) }
-  const setPrimary = async (t: any) => {
-    const np = { ...profile.data, primary_company_id: t.company_id }
-    await saveProfile(np)
-    const v = (vers.data?.versions || [])
-    if (t.company_id === 'korail' && v.length && a?.recruitment.company_id !== 'korail') await choose(v[v.length - 1].recruitment_id)
-    setPicker(false)
-  }
-  const addAndSelect = async (t: any) => {
-    const exists = (profile.data.targets || []).some((x: any) => x.company_id === t.company_id)
-    const np = { ...profile.data, targets: exists ? profile.data.targets : [...(profile.data.targets || []), t], primary_company_id: t.company_id }
-    await saveProfile(np)
-    setPicker(false)
-  }
-
   if (err) return <ErrorBox error={`서버에 연결할 수 없습니다 · ${err}`} />
   if (profile.loading || !rid) return <Loading />
   const p = profile.data
   const targets = [...(p.targets || [])].sort((x: any, y: any) => (x.priority || 99) - (y.priority || 99))
   const tName = (t: any) => t?.company_name || ({ korail: '한국철도공사', kepco: '한국전력공사', seoulmetro: '서울교통공사' } as any)[t?.company_id] || t?.company_id
-  const primary = targets.find((t: any) => t.company_id === p.primary_company_id) || targets.find((t: any) => t.company_id === a?.recruitment.company_id) || targets[0]
+  const primary = targets.find((t: any) => t.company_id === (scope?.company_id || p.primary_company_id)) || targets.find((t: any) => t.company_id === a?.recruitment.company_id) || targets[0]
   const primaryHasRules = !primary || primary.company_id === a?.recruitment.company_id
-  const primaryName = primaryHasRules ? (a?.recruitment.company || tName(primary) || '-') : tName(primary)
+  const primaryName = scope?.company_name || (primaryHasRules ? (a?.recruitment.company || tName(primary) || '-') : tName(primary))
   const d = new Date()
   const week = rm ? (rm.weeks.find((w: any) => rm.tasks.some((t: any) => t.week === w.week && !t.done)) || rm.weeks[rm.weeks.length - 1]) : null
   const weekTasks = week ? rm.tasks.filter((t: any) => t.week === week.week) : []
@@ -135,7 +128,7 @@ export default function Home() {
             </div>
             <div className="min-w-0 flex-1 basis-[220px]">
               <div className="text-[13px] text-sub">지원 직렬</div>
-              <div className="text-[17px] font-bold">{primaryHasRules ? a?.recruitment.job_category || '-' : primary?.job_category || '직렬 미입력'}</div>
+              <div className="text-[17px] font-bold">{scope?.job || (primaryHasRules ? a?.recruitment.job_category || '-' : primary?.job_category || '직렬 미입력')}</div>
               {primaryHasRules ? (
                 <>
                   <label className="relative mt-1 block">
@@ -157,20 +150,13 @@ export default function Home() {
             </div>
             <Link to="/spec" className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#D9D0FA] px-4 py-2.5 text-[14px] font-medium text-accent-ink hover:bg-lav">상세 분석 보기 <ArrowRight size={15} /></Link>
           </div>
-          {picker && (
-            <div className="mt-5 border-t border-line pt-4">
-              <div className="mb-2 text-[13px] text-sub">내 목표 기업에서 고르기</div>
-              <div className="mb-4 flex flex-wrap gap-2">
-                {targets.map((t: any) => {
-                  const nm = tName(t)
-                  return <button key={t.company_id} onClick={() => setPrimary(t)} className={`rounded-full px-3.5 py-1.5 text-[13.5px] ${t.company_id === primary?.company_id ? 'bg-accent text-white' : 'bg-[#F6F4FC] hover:bg-lav'}`}>{nm}{t.job_category ? ` · ${t.job_category}` : ''}</button>
-                })}
-              </div>
-              <div className="mb-2 text-[13px] text-sub">새 기업 검색해서 추가</div>
-              <TargetSearch
-                onPick={(org: string, _url: string, _title: string, group?: string) => addAndSelect({ company_id: COMP.find((c) => c.name === org)?.id || `org:${org}`, company_name: org, institution_group: group, job_category: '', recruitment_type: '신입', priority: targets.length + 1 })}
-              />
-              <p className="text-[12px] text-sub">직렬은 내 스펙 → 스펙 편집에서 입력할 수 있어요.</p>
+          {picker && <div className="mt-5 border-t border-line pt-4"><TargetPicker profile={p} onDone={refreshAll} /></div>}
+          {!picker && scope && (
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-4 text-[13px]">
+              {scope.posting_title ? <span className="min-w-0 text-sub">기준 공고: {scope.posting_url ? <a href={scope.posting_url} target="_blank" rel="noreferrer" className="text-accent-ink underline underline-offset-2">{scope.posting_title}</a> : scope.posting_title}</span> : <span className="text-butter-ink">기준 공고를 선택해 주세요</span>}
+              {scope.subject_source && <span className="rounded-full bg-butter px-2.5 py-0.5 text-[12px] text-butter-ink">필기 범위: {scope.subject_source}</span>}
+              {scope.status === '필기 과목 확인 필요' && <span className="rounded-full bg-butter px-2.5 py-0.5 text-[12px] text-butter-ink">필기 과목 확인 필요 {scope.posting_url && <a href={scope.posting_url} target="_blank" rel="noreferrer" className="ml-1 underline">공식 공고 보기</a>}</span>}
+              <div className="ml-auto"><PostingFlow key={scope.key} scope={scope} onDone={refreshAll} /></div>
             </div>
           )}
         </section>
@@ -265,7 +251,7 @@ export default function Home() {
           {week ? (
             <>
               <div className="mt-3 h-2.5 rounded-full bg-lav"><div className="h-2.5 rounded-full bg-accent" style={{ width: `${weekTasks.length ? (doneN / weekTasks.length) * 100 : 0}%` }} /></div>
-              <div className="mt-2 text-[12.5px] text-sub">{week.week}주차 · {week.title}</div>
+              <div className="mt-2 text-[12.5px] text-sub">{rm.scope?.company_name ? `${rm.scope.company_name} · ${rm.scope.job} · ` : ''}{week.week}주차 · {week.title}</div>
               <ul className="mt-4 space-y-2.5">
                 {weekTasks.slice(0, 6).map((t: any) => (
                   <li key={t.id}><button onClick={() => toggle(t)} className="flex w-full items-start gap-2.5 text-left text-[14px]">
@@ -276,7 +262,13 @@ export default function Home() {
               </ul>
             </>
           ) : (
-            <div className="mt-4 rounded-2xl bg-lav px-4 py-5 text-center text-[14px] text-[#5b4fa8]">아직 학습 로드맵이 없어요<br /><Link to="/roadmap" className="mt-2 inline-block font-semibold underline underline-offset-4">8주 로드맵 만들기</Link></div>
+            <div className="mt-4 rounded-2xl bg-lav px-4 py-5 text-center text-[14px] text-[#5b4fa8]">
+              {scope?.subjects?.ncs?.length || scope?.subjects?.major?.length
+                ? <>아직 만든 로드맵이 없어요<br /><button onClick={makeRoadmap} disabled={mkBusy} className="mt-2 inline-block font-semibold underline underline-offset-4">{mkBusy ? '만드는 중…' : '로드맵 만들기'}</button></>
+                : scope?.status === '필기 과목 확인 필요'
+                  ? <>필기 과목 확인 필요<br />{scope.posting_url && <a href={scope.posting_url} target="_blank" rel="noreferrer" className="mt-2 inline-block font-semibold underline underline-offset-4">공식 공고 보기</a>}</>
+                  : <>목표 기업의 공고를 선택하면<br />필기 과목으로 로드맵을 만들 수 있어요</>}
+            </div>
           )}
         </section>
 

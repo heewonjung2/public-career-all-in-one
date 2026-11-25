@@ -236,16 +236,23 @@ const NCS = ['의사소통능력', '수리능력', '문제해결능력']
 const MAJOR = ['운영체제', '데이터베이스', '데이터통신', '소프트웨어공학', '정보보호개론', '컴퓨터구조', '자료구조', '알고리즘', '인공지능']
 export const COMP = [{ id: 'korail', name: '한국철도공사' }, { id: 'kepco', name: '한국전력공사' }, { id: 'seoulmetro', name: '서울교통공사' }]
 
-export function TargetSearch({ onPick }: { onPick: (org: string, url: string, title: string, group?: string) => void; onQuick?: (id: string) => void }) {
+const RECENT_KEY = 'pc-recent-inst-search'
+function loadRecent(): string[] { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') } catch { return [] } }
+function pushRecent(q: string) { try { const r = [q, ...loadRecent().filter((x) => x !== q)].slice(0, 6); localStorage.setItem(RECENT_KEY, JSON.stringify(r)) } catch { /* ignore */ } }
+
+export function TargetSearch({ onPick, saved }: { onPick: (org: string, url: string, title: string, group?: string) => void; onQuick?: (id: string) => void; saved?: { name: string; job?: string; onClick: () => void }[] }) {
   const [q, setQ] = useState('')
   const [res, setRes] = useState<any>(null)
+  const [busy, setBusy] = useState(false)
   const [all, setAll] = useState<any>(null)
   const [group, setGroup] = useState('전체')
   const [showAll, setShowAll] = useState(false)
-  useEffect(() => {
-    const t = setTimeout(() => { if (q.trim()) api(`/institutions?q=${encodeURIComponent(q)}`).then(setRes).catch(() => setRes(null)); else setRes(null) }, 150)
-    return () => clearTimeout(t)
-  }, [q])
+  const [recent, setRecent] = useState<string[]>(loadRecent())
+  const run = async (term: string) => {
+    const t = term.trim(); if (!t) return
+    setBusy(true)
+    try { setRes(await api(`/institutions?q=${encodeURIComponent(t)}`)); pushRecent(t); setRecent(loadRecent()) } catch { setRes({ total: 0, results: [] }) } finally { setBusy(false) }
+  }
   useEffect(() => { if (showAll || (res && res.total === 0)) api(`/institutions?group=${encodeURIComponent(group)}`).then(setAll).catch(() => {}) }, [showAll, res, group])
   const Row = ({ i }: { i: any }) => (
     <div className="flex items-center justify-between gap-2 py-2.5 text-[14px]">
@@ -254,28 +261,42 @@ export function TargetSearch({ onPick }: { onPick: (org: string, url: string, ti
         <span className={`ml-2 rounded px-1.5 py-0.5 text-[11px] ${i.group === '중앙 공공기관' ? 'bg-lav text-accent-ink' : 'bg-sage text-sage-ink'}`}>{i.group}</span>
         {i.match && <span className="ml-2 text-[12px] text-sub">{i.match}</span>}
       </div>
-      <button className={btnSoft} onClick={() => onPick(i.name, '', '', i.group)}>선택</button>
+      <button className={`${btnSoft} shrink-0 whitespace-nowrap`} onClick={() => onPick(i.name, '', '', i.group)}>목표로 설정</button>
     </div>
   )
   const empty = res && res.total === 0
   return (
     <div className="mb-4 rounded-2xl border border-[#E2DBFA] bg-[#FBFAFF] p-4">
-      <input className={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder="기관명·약칭 입력 (예: 한수원, 마사회, 인국공, 서교공)" autoFocus />
+      <form onSubmit={(e) => { e.preventDefault(); run(q) }} className="flex gap-2">
+        <input className={`${input} min-w-0 flex-1`} value={q} onChange={(e) => { setQ(e.target.value); if (!e.target.value) setRes(null) }} placeholder="기관명·약칭 (예: 한수원, 마사회, 인국공)" autoFocus />
+        <button type="submit" className={`${btnPrimary} shrink-0 whitespace-nowrap !rounded-xl`} disabled={busy || !q.trim()}>{busy ? '검색 중…' : '검색'}</button>
+      </form>
       {res && res.total > 0 && <div className="mt-2 max-h-72 divide-y divide-line overflow-auto">{res.results.map((i: any) => <Row key={i.name} i={i} />)}</div>}
       {empty && <p className="mt-2 text-[13px] text-butter-ink">‘{q}’와 일치하는 공공기관이 없어요. 아래 전체 기관 목록에서 찾아보세요.</p>}
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px]">
-        {!empty && <button onClick={() => setShowAll(!showAll)} className="text-accent-ink underline underline-offset-4">{showAll ? '전체 목록 닫기' : '전체 기관 목록 보기'}</button>}
-        {(showAll || empty) && ['전체', '중앙 공공기관', '지방공공기관'].map((g) => (
-          <button key={g} onClick={() => setGroup(g)} className={`rounded-full px-3 py-1 ${group === g ? 'bg-accent text-white' : 'bg-white hover:bg-lav'}`}>{g}</button>
-        ))}
-      </div>
+      {!res && !q && recent.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1 text-[12.5px] text-sub">최근 검색</div>
+          <div className="flex flex-wrap gap-1.5">{recent.map((r) => <button key={r} onClick={() => { setQ(r); run(r) }} className="rounded-full bg-white px-3 py-1 text-[13px] hover:bg-lav">{r}</button>)}</div>
+        </div>
+      )}
+      {!res && !q && saved && saved.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1 text-[12.5px] text-sub">저장한 목표 기업</div>
+          <div className="flex flex-wrap gap-1.5">{saved.map((s) => <button key={s.name} onClick={s.onClick} className="rounded-full bg-white px-3 py-1 text-[13px] hover:bg-lav">{s.name}{s.job ? ` · ${s.job}` : ''}</button>)}</div>
+        </div>
+      )}
+      {(showAll || empty) && (
+        <div className="mt-3 flex flex-wrap gap-2 text-[12.5px]">
+          {['전체', '중앙 공공기관', '지방공공기관'].map((g) => <button key={g} onClick={() => setGroup(g)} className={`rounded-full px-3 py-1 ${group === g ? 'bg-accent text-white' : 'bg-white hover:bg-lav'}`}>{g}</button>)}
+        </div>
+      )}
       {(showAll || empty) && all && (
         <>
           <div className="mt-2 max-h-72 divide-y divide-line overflow-auto rounded-xl bg-white px-3">{all.results.map((i: any) => <Row key={i.name} i={i} />)}</div>
-          <p className="mt-1 text-[11.5px] text-sub">{all.total}개 · 중앙: {all.sources.central.name}({all.sources.central.checked_at} 기준 {all.sources.central.count}개) · 지방: {all.sources.local.note}</p>
+          <p className="mt-1 text-[11.5px] text-sub">{all.total}개 · 중앙: ALIO 기관 목록({all.sources.central.checked_at}) · 지방: {all.sources.local.note}</p>
         </>
       )}
-      <p className="mt-2 text-[11.5px] text-sub">기관을 먼저 목표로 저장하고, 채용공고 조회는 저장 후 ‘공고 조회’에서 따로 진행해요.</p>
+      {!empty && <button onClick={() => setShowAll(!showAll)} className="mt-3 text-[12.5px] text-accent-ink underline underline-offset-4">{showAll ? '전체 기관 목록 닫기' : '전체 기관 목록 보기'}</button>}
     </div>
   )
 }

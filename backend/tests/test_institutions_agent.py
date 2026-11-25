@@ -39,9 +39,9 @@ def test_agent_quick_actions():
     with TestClient(app) as c:
         c.post("/api/profile/reset-demo")
         c.put("/api/active", json={"recruitment_id": "korail-2026H1-it"})
-        a = c.post("/api/chat/ask", json={"question": "내 자격증 가점 몇 점이야?"}).json()["answers"][0]
+        a = c.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "내 자격증 가점 몇 점이야?"}).json()["answers"][0]
         assert a["mode"] == "rule_engine" and "6.5" in a["answer"]["summary"]
-        b = c.post("/api/chat/ask", json={"question": "기사 자격증 뭐 더 따면 좋아?"}).json()["answers"][0]
+        b = c.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "기사 자격증 뭐 더 따면 좋아?"}).json()["answers"][0]
         assert b["mode"] == "simulator" and any("+4.0점" in l for l in b["answer"]["lines"])
-        w = c.post("/api/chat/ask", json={"question": "이번 주 할 일 알려줘"}).json()["answers"][0]
+        w = c.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "이번 주 할 일 알려줘"}).json()["answers"][0]
         assert w["mode"] == "roadmap"

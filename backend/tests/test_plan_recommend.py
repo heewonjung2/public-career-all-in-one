@@ -34,7 +34,7 @@ def test_closed_application_round_skipped():
 def test_chat_recommendation_uses_simulator():
     with TestClient(app) as c:
         c.post("/api/profile/reset-demo")
-        a = c.post("/api/chat/ask", json={"question": "나 무슨 기사 자격증 더 따는 게 좋아?", "recruitment_id": "korail-2026H1-it"}).json()["answers"][0]
+        a = c.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "나 무슨 기사 자격증 더 따는 게 좋아?", "recruitment_id": "korail-2026H1-it"}).json()["answers"][0]
         assert a["mode"] == "simulator" and not a["abstained"]
         lines = a["answer"]["lines"]
         assert any(l.startswith("정보보안기사 / +4.0점") for l in lines)        # 직렬별 2번째 자리 → +4

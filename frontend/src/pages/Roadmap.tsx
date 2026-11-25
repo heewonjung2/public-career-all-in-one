@@ -26,7 +26,7 @@ function chip(cat: string) {
 
 function Plan() {
   const rm = useApi<any>('/roadmaps')
-  const act = useApi<any>('/active')
+  const sc = useApi<any>('/target/scope')
   const [busy, setBusy] = useState(false)
   const create = async () => { setBusy(true); try { rm.setData(await api('/roadmaps', { method: 'POST', json: { weeks: 8 } })) } finally { setBusy(false) } }
   const toggle = async (t: any) => {
@@ -42,11 +42,24 @@ function Plan() {
   if (rm.loading) return <Loading />
   if (rm.error) return <ErrorBox error={rm.error} />
   const d = rm.data
+  const s = sc.data
+  const hasSubj = !!(s?.subjects?.ncs?.length || s?.subjects?.major?.length)
   if (!d) return (
     <div className="card mx-auto max-w-lg px-8 py-10 text-center">
       <img src="/chick.png" alt="" className="mx-auto h-20 w-20" />
-      <p className="mt-3 text-[15px]">아직 학습 로드맵이 없어요.</p>
-      <button className={`${btnPrimary} mt-4`} onClick={create} disabled={busy}>8주 로드맵 만들기</button>
+      {s && <p className="mt-2 text-[13px] text-sub">{s.company_name} · {s.job}{s.posting_title ? ` · ${s.posting_title}` : ''}</p>}
+      {hasSubj ? (<>
+        <p className="mt-3 text-[15px]">아직 만든 로드맵이 없어요</p>
+        {s.subject_source && <p className="mt-1 text-[12.5px] text-butter-ink">필기 범위: {s.subject_source}</p>}
+        <button className={`${btnPrimary} mt-4`} onClick={create} disabled={busy}>{busy ? '만드는 중…' : '로드맵 만들기'}</button>
+      </>) : s?.status === '필기 과목 확인 필요' ? (<>
+        <p className="mt-3 text-[15px]">필기 과목 확인 필요</p>
+        <p className="mt-1 text-[13px] text-sub">공고의 필기 과목을 원문에서 확인하지 못했어요(이미지·HWP 등).</p>
+        {s.posting_url && <a className={`${btnPrimary} mt-4 inline-flex`} href={s.posting_url} target="_blank" rel="noreferrer">공식 공고 보기</a>}
+      </>) : (<>
+        <p className="mt-3 text-[15px]">아직 만든 로드맵이 없어요</p>
+        <p className="mt-1 text-[13px] text-sub">홈의 목표 기업 카드에서 ‘공고 선택’으로 기준 공고와 직렬을 고르면 필기 과목으로 로드맵을 만들 수 있어요.</p>
+      </>)}
     </div>
   )
   const pct = d.progress.percent
@@ -56,7 +69,9 @@ function Plan() {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[30px] font-bold">학습 로드맵</h1>
-          <p className="mt-1 text-[15px] text-sub">{act.data ? `${act.data.company} ${act.data.job_category} 필기 준비 · ${act.data.year} ${act.data.type === '사전예고' ? '사전예고 기준' : '확정 공고 기준'}` : ''}</p>
+          <p className="mt-1 text-[15px] text-sub">{d.scope ? `${d.scope.company_name} · ${d.scope.job} 필기 준비` : ''}</p>
+          {d.scope?.posting_title && <p className="mt-0.5 text-[13px] text-sub">기준 공고: {d.scope.posting_url ? <a className="text-accent-ink underline underline-offset-2" href={d.scope.posting_url} target="_blank" rel="noreferrer">{d.scope.posting_title}</a> : d.scope.posting_title}</p>}
+          {d.scope?.subject_source && <span className="mt-1.5 inline-block rounded-full bg-butter px-2.5 py-0.5 text-[12px] text-butter-ink">필기 범위: {d.scope.subject_source}</span>}
         </div>
         <button onClick={create} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-accent bg-white px-5 py-2.5 text-[14.5px] font-semibold text-accent-ink hover:bg-lav"><RefreshCw size={16} className={busy ? 'animate-spin' : ''} />로드맵 다시 만들기</button>
       </div>

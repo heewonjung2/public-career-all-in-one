@@ -45,7 +45,7 @@ def main():
     with TestClient(app) as c:
         for q, kind, exp, must in CASES:
             t0 = time.perf_counter()
-            r = c.post("/api/chat/ask", json={"question": q}).json()
+            r = c.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": q}).json()
             t_all.append((time.perf_counter() - t0) * 1000)
             a = r["answers"][0]
             got = [(h["doc_key"], h["page_number"]) for h in a["retrieved"][:3]]

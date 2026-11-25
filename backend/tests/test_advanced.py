@@ -98,9 +98,9 @@ def test_mismatched_job_not_used(client):
 
 # ---------------- RAG
 def test_rag_scope_and_abstain(client):
-    r = client.post("/api/chat/ask", json={"question": "NCS 출제 대행사가 공개되어 있어?"}).json()
+    r = client.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "NCS 출제 대행사가 공개되어 있어?"}).json()
     assert r["answers"][0]["abstained"]
-    r = client.post("/api/chat/ask", json={"question": "한국전력공사 지원 자격은?"}).json()
+    r = client.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "한국전력공사 지원 자격은?"}).json()
     assert r["answers"][0]["abstained"] and "한국전력공사" in r["answers"][0]["answer"]["summary"]
     assert r["history_stored_on_server"] is False
 
@@ -111,14 +111,14 @@ def test_rag_search_filtered_to_one_version(client):
 
 
 def test_rag_rule_engine_answer(client):
-    a = client.post("/api/chat/ask", json={"question": "정보처리기사랑 SQLD 가점이 중복 인정돼?"}).json()["answers"][0]
+    a = client.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "정보처리기사랑 SQLD 가점이 중복 인정돼?"}).json()["answers"][0]
     assert a["mode"] == "rule_engine"
     assert any("SQLD" in l and "목록에 없음" in l for l in a["answer"]["lines"])
     assert all(c["verified"] for c in a["citations"])
 
 
 def test_rag_no_fake_ai_answer_without_key(client):
-    a = client.post("/api/chat/ask", json={"question": "철도법령 출제범위 알려줘"}).json()["answers"][0]
+    a = client.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "철도법령 출제범위 알려줘"}).json()["answers"][0]
     assert a["mode"] in ("retrieval_only", "llm_grounded")
 
 

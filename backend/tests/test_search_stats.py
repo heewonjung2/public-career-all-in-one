@@ -60,7 +60,7 @@ def test_ai_rate_limit(monkeypatch):
     monkeypatch.setattr(m, "AI_LIMIT_IP", 1)
     m._hits.clear()
     with TestClient(app) as c:
-        c.post("/api/chat/ask", json={"question": "한국사 1급은 몇 점이야?"})
-        r = c.post("/api/chat/ask", json={"question": "한국사 1급은 몇 점이야?"})
+        c.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "한국사 1급은 몇 점이야?"})
+        r = c.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "한국사 1급은 몇 점이야?"})
         assert r.status_code == 429
     m._hits.clear()

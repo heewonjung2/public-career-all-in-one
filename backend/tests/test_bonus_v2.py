@@ -154,5 +154,5 @@ def test_engine_shared_by_simulator_strategy_rag():
         a = c.post("/api/analysis", json={"recruitment_id": "korail-2026H1-it"}).json()["bonus"]["total_confirmed"]
         s = c.post("/api/simulate", json={"recruitment_id": "korail-2026H1-it", "add_certificates": []}).json()["current"]["total_confirmed"]
         g = c.post("/api/strategy/optimize", json={}).json()["companies"][0]["current_bonus"]
-        q = c.post("/api/chat/ask", json={"question": "내 자격증 가점 몇 점이야?"}).json()["answers"][0]["answer"]["summary"]
+        q = c.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "내 자격증 가점 몇 점이야?"}).json()["answers"][0]["answer"]["summary"]
     assert a == s == g == 6.5 and "6.5" in q

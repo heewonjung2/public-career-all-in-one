@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .database import DATA_DIR, ROOT, connect, dumps, init_db, loads
-from .services import ai_analyzer, document_parser, engine, rag, roadmap, screening, source_verifier, strategy, versions
+from .services import ai_analyzer, document_parser, engine, institutions, rag, roadmap, screening, source_verifier, strategy, versions
 from .services.evidence_validator import page_text, validate_rulefile
 
 app = FastAPI(title="공기업 All-in-One API", version="0.1.0")
@@ -516,18 +516,48 @@ class RoadmapReq(BaseModel):
     weeks: int = 8
 
 
+def _korail_scope(rid: str) -> dict:
+    r = RULES[rid]
+    we = r.get("written_exam") or r.get("written_exam_reference") or {}
+    src = r["recruitment_title"] if r.get("written_exam") else "2026년 상반기 공고 참고"
+    ev = [{"what": e["what"], "doc": e["doc"], "page": e["page"], "quote": e["quote"], "verified": e.get("evidence_verified", False)} for e in we.get("evidence", [])]
+    return {"company_id": r["company_id"], "company_name": r["company"], "posting_id": rid, "posting_title": r["recruitment_title"],
+            "posting_url": r["official_source"]["url"], "job": r["job_category"],
+            "subjects": {"ncs": we.get("ncs_subjects", []), "major": we.get("major_subjects", []),
+                         "law": ["철도법령"] if (we.get("composition") or {}).get("철도법령") else []},
+            "subject_source": src, "evidence": ev, "evidence_rid": rid, "status": "필기 과목 확인됨"}
+
+
+def current_scope(p: dict | None = None) -> dict:
+    """로드맵·체크 상태를 나누는 기준: 기관 | 공고 | 모집 직렬."""
+    p = p or get_profile()
+    sc = p.get("plan_scope")
+    if not sc:
+        sc = _korail_scope(active_rid(p))
+    sc["key"] = f"{sc['company_id']}|{sc.get('posting_id') or sc.get('posting_url')}|{sc.get('job')}"
+    return sc
+
+
 @app.post("/api/roadmaps")
 def create_roadmap(req: RoadmapReq):
-    rid_ = req.recruitment_id or active_rid()
-    rule = RULES.get(rid_)
-    if not rule or not (rule.get("written_exam") or rule.get("written_exam_reference")):
-        raise HTTPException(400, "필기시험 정보가 있는 공고에서만 로드맵을 생성할 수 있습니다")
-    rm = roadmap.generate_rule_based(rule, get_profile(), max(1, min(req.weeks, 8)))
-    if not rule.get("written_exam"):
-        rm["label"] = "규칙 기반 추천 · 필기 범위는 과거 공고(2026 상반기) 참고 — 2027 최종 공고 확인 필요"
+    p = get_profile()
+    sc = current_scope(p)
+    subj = sc.get("subjects") or {}
+    if not (subj.get("ncs") or subj.get("major")):
+        raise HTTPException(400, "필기 과목 확인 필요 — 공식 공고에서 이 직렬의 필기 과목을 확인하지 못했습니다")
+    rule = RULES.get(sc.get("posting_id")) if sc["company_id"] == "korail" else None
+    if not rule:
+        rule = {"written_exam": {"ncs_subjects": subj.get("ncs", []), "major_subjects": subj.get("major", []), "composition": {}}}
+    rm = roadmap.generate_rule_based(rule, p, max(1, min(req.weeks, 8)))
+    if not subj.get("law"):
+        for w in rm["weeks"]:
+            w["tasks"] = [t for t in w["tasks"] if t["category"] != "철도법령"] or [{"title": "주간 오답노트 복습", "category": "복습"}]
+            w["title"] = w["title"].replace("철도법령 10문항 대비 + ", "")
+    rm["label"] = f"필기 범위: {sc.get('subject_source')}"
+    rm["scope"] = {k: sc.get(k) for k in ("company_name", "job", "posting_title", "posting_url", "subject_source")}
     with connect() as c:
-        cur = c.execute("INSERT INTO roadmaps (recruitment_id, data, created_at) VALUES (?,?,?)",
-                        (rid_, dumps(rm), now()))
+        cur = c.execute("INSERT INTO roadmaps (recruitment_id, data, created_at, scope_key) VALUES (?,?,?,?)",
+                        (sc.get("posting_id") or "", dumps(rm), now(), sc["key"]))
         rid = cur.lastrowid
         for w in rm["weeks"]:
             for t in w["tasks"]:
@@ -537,9 +567,13 @@ def create_roadmap(req: RoadmapReq):
 
 
 @app.get("/api/roadmaps")
-def get_roadmap():
+def get_roadmap(company_id: str | None = None):
+    sc = current_scope()
     with connect() as c:
-        row = c.execute("SELECT * FROM roadmaps ORDER BY id DESC LIMIT 1").fetchone()
+        if company_id and company_id != sc.get("company_id"):  # 채팅 기준 기업이 홈 범위와 다르면 그 기업의 로드맵만 조회
+            row = c.execute("SELECT * FROM roadmaps WHERE scope_key LIKE ? ORDER BY id DESC LIMIT 1", (company_id + "|%",)).fetchone()
+        else:
+            row = c.execute("SELECT * FROM roadmaps WHERE scope_key=? ORDER BY id DESC LIMIT 1", (sc["key"],)).fetchone()
         if not row:
             return None
         tasks = [dict(t) for t in c.execute("SELECT * FROM study_tasks WHERE roadmap_id=? ORDER BY week, id", (row["id"],))]
@@ -547,6 +581,106 @@ def get_roadmap():
     done = sum(t["done"] for t in tasks)
     return {"id": row["id"], "recruitment_id": row["recruitment_id"], "created_at": row["created_at"], **data,
             "tasks": tasks, "progress": {"done": done, "total": len(tasks), "percent": round(done * 100 / len(tasks)) if tasks else 0}}
+
+
+@app.get("/api/target/scope")
+def get_scope():
+    sc = current_scope()
+    with connect() as c:
+        has = c.execute("SELECT 1 FROM roadmaps WHERE scope_key=? LIMIT 1", (sc["key"],)).fetchone() is not None
+    return dict(sc, has_roadmap=has)
+
+
+class PostingsReq(BaseModel):
+    company_id: str
+    company_name: str
+
+
+@app.post("/api/target/postings")
+def target_postings(req: PostingsReq):
+    """기관의 공식 공고 목록: 검증 규칙이 있는 기관은 규칙 버전, 그 외는 공식 사이트 검색(캐시)."""
+    vs = [r for r in RULES.values() if r["company_id"] == req.company_id and r.get("analysis_supported", True)]
+    if vs:
+        return {"postings": [{"posting_id": r["id"], "title": r["recruitment_title"], "published_at": r.get("published_at"),
+                              "url": r["official_source"]["url"], "type": r.get("rule_version_type", "확정 채용공고")} for r in vs], "verified_rules": True}
+    from .services import posting_search
+    try:
+        with connect() as c:
+            res = posting_search.search(c, req.company_name)
+    except Exception as e:  # noqa: BLE001
+        return {"postings": [], "verified_rules": False, "message": f"공고 검색 실패: {e.__class__.__name__}"}
+    return {"postings": [{"posting_id": None, "url": x["url"], "title": x.get("title") or x.get("ai_title"), "published_at": x.get("posted_at"),
+                          "status": x.get("status"), "attachments": [a["name"] for a in x.get("attachments", [])]} for x in res.get("results", [])],
+            "verified_rules": False, "message": res.get("message")}
+
+
+class PostingPick(BaseModel):
+    company_id: str
+    company_name: str
+    posting_id: str | None = None
+    url: str | None = None
+    title: str | None = None
+
+
+@app.post("/api/target/posting")
+def target_posting(req: PostingPick):
+    """선택 공고에서 모집 직렬과 필기 과목(근거 포함)을 확인."""
+    if req.posting_id in RULES:
+        sc = _korail_scope(req.posting_id)
+        r = RULES[req.posting_id]
+        jobs = [f"{s}({f})" if f != "일반" else s for s, fs in (r.get("job_hierarchy") or {}).items() if not s.startswith("_") for f in fs] or [r["job_category"]]
+        return dict(sc, jobs=jobs, job_note="필기 과목·가점 규칙은 사무영업(IT) 기준으로 검증됨" if r["company_id"] == "korail" else None)
+    from .services import posting_search
+    try:
+        with connect() as c:
+            a = posting_search.analyze(c, req.url, _store_document)
+    except Exception as e:  # noqa: BLE001
+        a = {"status": "분석 실패", "message": str(e)[:150]}
+    ext = a.get("extraction") or {}
+    ncs, major, ev = [], [], []
+    for it in ext.get("written_exam", []):
+        txt = (it.get("rule_text") or "") + " " + it.get("item", "")
+        if not it.get("evidence_verified"):
+            continue
+        parts = [x.strip() for x in re.split(r"[,·/]|및", it.get("rule_text") or "") if 1 < len(x.strip()) < 25]
+        if "NCS" in txt.upper() or "직업기초" in txt:
+            ncs += [x for x in parts if "능력" in x]
+        if "전공" in txt:
+            major += [x for x in parts if "능력" not in x and "문항" not in x and "분" not in x]
+        ev.append({"what": it["item"], "doc": "upload", "page": it["evidence"]["page"], "quote": it["evidence"]["quote"], "verified": True})
+    ncs, major = list(dict.fromkeys(ncs))[:10], list(dict.fromkeys(major))[:10]
+    ok = bool(ncs or major)
+    return {"company_id": req.company_id, "company_name": req.company_name, "posting_id": None, "posting_url": req.url, "posting_title": a.get("title") or req.title,
+            "jobs": ext.get("job_categories", []), "subjects": {"ncs": ncs, "major": major, "law": []},
+            "subject_source": f"{a.get('title') or req.title} (AI 추출 · 원문 일치 항목만)" if ok else None, "evidence": ev,
+            "status": "필기 과목 확인됨(AI 추출·원문 대조)" if ok else "필기 과목 확인 필요", "analysis_status": a.get("status"),
+            "message": None if ok else (a.get("message") or "공고 본문·첨부에서 이 직렬의 필기 과목을 확인하지 못했어요.")}
+
+
+class ScopeReq(BaseModel):
+    company_id: str
+    company_name: str
+    posting_id: str | None = None
+    posting_title: str | None = None
+    posting_url: str | None = None
+    job: str
+    subjects: dict = {}
+    subject_source: str | None = None
+    evidence: list = []
+    status: str | None = None
+
+
+@app.put("/api/target/scope")
+def set_scope(req: ScopeReq):
+    p = get_profile()
+    p.pop("_updated_at", None)
+    p["plan_scope"] = req.model_dump()
+    p["primary_company_id"] = req.company_id
+    if req.posting_id in RULES:
+        p["active_recruitment_id"] = req.posting_id
+    with connect() as c:
+        c.execute("UPDATE profile SET data=?, updated_at=? WHERE id=1", (dumps(p), now()))
+    return get_scope()
 
 
 class TaskPatch(BaseModel):
@@ -675,6 +809,10 @@ def set_active(req: ActiveReq):
     p = get_profile()
     p.pop("_updated_at", None)
     p["active_recruitment_id"] = req.recruitment_id
+    sc = p.get("plan_scope")
+    if sc and sc.get("company_id") == RULES[req.recruitment_id]["company_id"]:
+        job = sc.get("job")
+        p["plan_scope"] = dict(_korail_scope(req.recruitment_id), job=job or RULES[req.recruitment_id]["job_category"])
     with connect() as c:
         c.execute("UPDATE profile SET data=?, updated_at=? WHERE id=1", (dumps(p), now()))
     return get_active()
@@ -749,7 +887,7 @@ def strategy_apply(req: StrategyReq):
     rm = roadmap.from_strategy(opt, max(1, min(req.weeks, 8)))
     rid = opt["companies"][0]["recruitment_id"]
     with connect() as c:
-        cur = c.execute("INSERT INTO roadmaps (recruitment_id, data, created_at) VALUES (?,?,?)", (rid, dumps(rm), now()))
+        cur = c.execute("INSERT INTO roadmaps (recruitment_id, data, created_at, scope_key) VALUES (?,?,?,?)", (rid, dumps(rm), now(), current_scope()["key"]))
         for w in rm["weeks"]:
             for t in w["tasks"]:
                 c.execute("INSERT INTO study_tasks (roadmap_id, week, title, category) VALUES (?,?,?,?)", (cur.lastrowid, w["week"], t["title"], t["category"]))
@@ -760,6 +898,35 @@ def strategy_apply(req: StrategyReq):
 class ChatReq(BaseModel):
     question: str
     recruitment_id: str | None = None
+    context: dict | None = None          # 이 대화에서 확인한 답변 기준 {company_id, company_name, job}
+    pending_question: str | None = None  # 기업을 되물은 원래 질문
+
+
+def _chat_targets(p: dict) -> list[dict]:
+    ts = sorted(p.get("targets") or [], key=lambda t: t.get("priority") or 99)
+    names = {c["id"]: c["name"] for c in COMPANIES}
+    return [{"company_id": t["company_id"], "company_name": t.get("company_name") or names.get(t["company_id"], t["company_id"]),
+             "job": t.get("job_category") or ""} for t in ts]
+
+
+def _resolve_company(text: str, p: dict) -> dict | None:
+    """대답/질문에서 기관을 찾는다: 코레일 등 별칭 → 저장한 목표 기업명 → 공공기관 목록 검색."""
+    m = rag.detect_companies(text)
+    tg = _chat_targets(p)
+    if m:
+        t = next((x for x in tg if x["company_id"] == m[0]), None)
+        return t or {"company_id": m[0], "company_name": {c["id"]: c["name"] for c in COMPANIES}.get(m[0], m[0]), "job": ""}
+    for t in tg:
+        if t["company_name"] and (t["company_name"] in text or text.strip() in t["company_name"]) and len(text.strip()) >= 2:
+            return t
+    body = re.sub(r"(기준|으로|로|요|이요|공사|\s)+$", "", text.strip())
+    if 2 <= len(body) <= 20:
+        r = institutions.search(body, limit=1)
+        if r.get("results"):
+            nm = r["results"][0]["name"]
+            t = next((x for x in tg if x["company_name"] == nm), None)
+            return t or {"company_id": f"org:{nm}", "company_name": nm, "job": ""}
+    return None
 
 
 def _rebuild_index():
@@ -795,17 +962,49 @@ def chat_ask(req: ChatReq):
     q = req.question.strip()[:500]
     if not q:
         raise HTTPException(400, "질문을 입력하세요")
-    mentioned = rag.detect_companies(q)
     names = {c["id"]: c["name"] for c in COMPANIES}
+    p = get_profile()
+    # ---- 답변 기준(기업) 결정: 질문에 명시 > 되물은 질문에 대한 대답 > 이 대화에서 확인한 기준 > 되묻기
+    ctx = dict(req.context or {})
+    found = _resolve_company(q, p) if (req.pending_question or rag.detect_companies(q)) else None
+    if req.pending_question and found:
+        ctx = found
+        if "it" in q.lower() or "전산" in q:
+            ctx["job"] = ctx.get("job") or "사무영업(IT)"
+        q = req.pending_question.strip()[:500]
+    elif found:
+        ctx = found
+    if not ctx.get("company_id") and req.recruitment_id in RULES:
+        ctx = {"company_id": RULES[req.recruitment_id]["company_id"], "company_name": RULES[req.recruitment_id]["company"], "job": RULES[req.recruitment_id]["job_category"]}
+    if not ctx.get("company_id"):
+        opts = [f"{t['company_name']}{' · ' + t['job'] if t['job'] else ''}" for t in _chat_targets(p)]
+        return {"question": q, "clarify": {"question": "어느 기업 기준으로 볼까요?", "options": opts + ["다른 기관"]},
+                "pending_question": q, "context": None, "answers": []}
+    mentioned = [ctx["company_id"]]
     rid = req.recruitment_id or active_rid()
+    if ctx["company_id"] != "korail":
+        rid = next((r["id"] for r in RULES.values() if r["company_id"] == ctx["company_id"]), rid)
     if not req.recruitment_id and "하반기" in q:
         rid = "korail-2026H2-general"
-    p = get_profile()
+    # 후속 질문 이어가기: "그럼 컴활 2급은?"처럼 자격증만 말하면 앞의 가점 질문으로 해석
+    if rid in RULES and rag.detect_certs(q, RULES[rid]) and not re.search(r"점|인정|중복|유효|과목|일정|기간|응시|시험|따", q):
+        q = q.rstrip("?？ ") + " 가점 몇 점이야?"
     # '이번 주 할 일' → 로드맵·준비 계획 연결(AI 미호출)
     if re.search(r"이번\s?주.{0,6}(할\s?일|목표|공부)|오늘\s?할\s?일|뭐\s?해야", q):
         from .services import planning
+        if ctx["company_id"] not in {r["company_id"] for r in RULES.values()}:
+            rm = get_roadmap(ctx["company_id"])
+            if rm:
+                wk = next((w for w in rm["weeks"] if any(t["week"] == w["week"] and not t["done"] for t in rm["tasks"])), rm["weeks"][-1])
+                todo = [t for t in rm["tasks"] if t["week"] == wk["week"] and not t["done"]]
+                summ, lines = f"{wk['week']}주차 남은 과제 {len(todo)}개예요.", [f"☐ {t['title']}" for t in todo]
+            else:
+                summ, lines = f"{ctx['company_name']}은(는) 아직 만든 로드맵이 없어요.", []
+            return {"question": q, "context": ctx, "answers": [{"scope": {"company": ctx["company_name"], "job_category": ctx.get("job") or (rm or {}).get("scope", {}).get("job"),
+                    "recruitment_title": (rm or {}).get("scope", {}).get("posting_title")}, "mode": "roadmap", "abstained": False, "citations": [],
+                    "answer": {"summary": summ, "lines": lines}, "action": None if rm else {"label": "로드맵 만들기", "to": "/roadmap"}}]}
         rule = RULES[rid]
-        rm = get_roadmap()
+        rm = get_roadmap("korail")
         lines, cits = [], []
         if rm:
             wk = next((w for w in rm["weeks"] if any(t["week"] == w["week"] and not t["done"] for t in rm["tasks"])), rm["weeks"][-1])
@@ -813,13 +1012,14 @@ def chat_ask(req: ChatReq):
             lines = [f"{'☑' if t['done'] else '☐'} {t['title']} ({t['category']})" for t in todo]
             head = f"{wk['week']}주차 · {wk['title']} — {sum(1 for t in todo if t['done'])}/{len(todo)} 완료"
         else:
-            head = "아직 학습 로드맵이 없어요. 로드맵 탭에서 8주 로드맵을 만들면 주간 할 일이 생겨요."
+            head = "아직 만든 로드맵이 없어요."
         pl = planning.build(rule, RULES, p, rag.recommend_certs(rule, p), screening.document_score(rule, p))
         acts = [f"{a['title']}{' (' + a['due'] + '까지)' if a.get('due') else ''}" for a in pl["actions"][:3]]
         return {"question": q, "answers": [{"scope": {"company": rule["company"], "job_category": rule["job_category"], "recruitment_id": rid,
                                                        "recruitment_title": rule["recruitment_title"], "published_at": rule.get("published_at")},
                                              "mode": "roadmap", "abstained": False, "retrieved": [], "citations": [],
-                                             "answer": {"summary": head, "lines": lines, "notes": (["먼저 할 일: " + " · ".join(acts)] if acts else []) + [f"공고 일정 기준: {pl['anchor']['kind']} — {pl['anchor']['basis']}"]}}],
+                                             "action": None if rm else {"label": "로드맵 만들기", "to": "/roadmap"},
+                                             "answer": {"summary": head, "lines": lines, "notes": (["먼저 할 일: " + " · ".join(acts)] if acts else []) + [f"공고 일정 기준: {pl['anchor']['kind']} — {pl['anchor']['basis']}"]}}], "context": ctx,
                 "elapsed_ms": 0, "ai_enabled": ai_analyzer.ai_available(), "history_stored_on_server": False}
     # 개인정보 최소화: 실명/닉네임/학력 등은 전달하지 않고 계산에 필요한 자격증 목록만 사용
     min_profile = {"certificates": p.get("certificates", []), "birth_year": p.get("birth_year"),
@@ -833,13 +1033,14 @@ def chat_ask(req: ChatReq):
         else:
             rule = next((r for r in RULES.values() if r["company_id"] == cid), None)
         if not rule:
-            answers.append({"scope": {"company": names.get(cid, cid)}, "mode": "abstain", "abstained": True, "retrieved": [], "citations": [],
-                            "answer": {"summary": f"{names.get(cid, cid)}의 검증된 공식 채용문서가 등록되어 있지 않아 답변할 수 없습니다.",
-                                       "next": ["공식 채용공고 등록 후 다시 질문"]}})
+            cn = ctx.get("company_name") or names.get(cid, cid)
+            answers.append({"scope": {"company": cn, "job_category": ctx.get("job")}, "mode": "abstain", "abstained": True, "retrieved": [], "citations": [],
+                            "answer": {"summary": f"{cn}은(는) 검증된 가점·필기 기준이 아직 없어 계산할 수 없어요.",
+                                       "lines": ["부족한 정보: 공식 채용공고 원문(가점 기준·필기 과목)", "홈 목표 기업 카드의 ‘공고 선택’에서 공식 공고를 연결하면 확인할 수 있어요"]}})
             continue
         with connect() as c:
             answers.append(rag.ask(c, q, rule, min_profile))
-    return {"question": q, "answers": answers, "elapsed_ms": round((time.perf_counter() - t0) * 1000),
+    return {"question": q, "answers": answers, "context": ctx, "elapsed_ms": round((time.perf_counter() - t0) * 1000),
             "ai_enabled": ai_analyzer.ai_available(), "history_stored_on_server": False}
 
 

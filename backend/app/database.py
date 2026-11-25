@@ -77,6 +77,11 @@ def connect():
 def init_db() -> None:
     with connect() as c:
         c.executescript(SCHEMA)
+        cols = [r[1] for r in c.execute("PRAGMA table_info(roadmaps)")]
+        if "scope_key" not in cols:  # 마이그레이션: 로드맵을 기관|공고|직렬별로 분리
+            c.execute("ALTER TABLE roadmaps ADD COLUMN scope_key TEXT")
+        # 기존(범위 없는) 로드맵은 당시 공고 기준 코레일 사무영업(IT)로 귀속 — 다른 기관에 섞이지 않게 함
+        c.execute("UPDATE roadmaps SET scope_key = 'korail|' || recruitment_id || '|사무영업(IT)' WHERE scope_key IS NULL")
 
 
 def dumps(o) -> str:

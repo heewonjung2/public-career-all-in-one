@@ -41,7 +41,7 @@ def test_all_features_share_active_version(c):
         a = c.post("/api/analysis", json={}).json()
         s = c.post("/api/simulate", json={"add_certificates": []}).json()
         g = c.post("/api/strategy/optimize", json={}).json()
-        q = c.post("/api/chat/ask", json={"question": "한국사 1급은 몇 점이야?"}).json()
+        q = c.post("/api/chat/ask", json={"context": {"company_id": "korail", "company_name": "한국철도공사"}, "question": "한국사 1급은 몇 점이야?"}).json()
         assert a["recruitment"]["id"] == rid
         assert g["companies"][0]["recruitment_id"] == rid
         assert q["answers"][0]["scope"]["recruitment_id"] == rid
@@ -57,4 +57,4 @@ def test_2027_page_without_screening_object(c):
 def test_roadmap_for_2027_uses_labeled_reference(c):
     c.put("/api/active", json={"recruitment_id": "korail-2027H1-preview"})
     rm = c.post("/api/roadmaps", json={}).json()
-    assert "과거 공고" in rm["label"]
+    assert "2026년 상반기 공고 참고" in rm["label"]
