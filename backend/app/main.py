@@ -622,6 +622,23 @@ class PostingPick(BaseModel):
     title: str | None = None
 
 
+def _clean_jobs(items: list) -> list[str]:
+    """표 행('신입사원 | 기계 | 기계 | 16명')으로 추출된 직렬을 '기계'처럼 정리, 머리글 행 제외."""
+    out = []
+    for it in items or []:
+        it = str(it)
+        if "|" in it:
+            parts = [x.strip() for x in it.split("|") if x.strip()]
+            if any(h in it for h in ("채용유형", "직렬 |", "인원")) and not any(ch.isdigit() for ch in it):
+                continue
+            cand = parts[1] if len(parts) >= 3 else parts[0]
+            sub = parts[2] if len(parts) >= 4 and parts[2] != cand else None
+            it = f"{cand}({sub})" if sub else cand
+        if it and it not in out:
+            out.append(it)
+    return out
+
+
 @app.post("/api/target/posting")
 def target_posting(req: PostingPick):
     """선택 공고에서 모집 직렬과 필기 과목(근거 포함)을 확인."""
@@ -651,10 +668,10 @@ def target_posting(req: PostingPick):
     ncs, major = list(dict.fromkeys(ncs))[:10], list(dict.fromkeys(major))[:10]
     ok = bool(ncs or major)
     return {"company_id": req.company_id, "company_name": req.company_name, "posting_id": None, "posting_url": req.url, "posting_title": a.get("title") or req.title,
-            "jobs": ext.get("job_categories", []), "subjects": {"ncs": ncs, "major": major, "law": []},
+            "jobs": _clean_jobs(ext.get("job_categories", [])), "subjects": {"ncs": ncs, "major": major, "law": []},
             "subject_source": f"{a.get('title') or req.title} (AI 추출 · 원문 일치 항목만)" if ok else None, "evidence": ev,
             "status": "필기 과목 확인됨(AI 추출·원문 대조)" if ok else "필기 과목 확인 필요", "analysis_status": a.get("status"),
-            "message": None if ok else (a.get("message") or "공고 본문·첨부에서 이 직렬의 필기 과목을 확인하지 못했어요.")}
+            "message": None if ok else "공고 본문·첨부(PDF)에서 필기 과목을 원문 대조로 확인하지 못했어요. 이미지·HWP 첨부일 수 있으니 공식 공고에서 직접 확인해 주세요."}
 
 
 class ScopeReq(BaseModel):
