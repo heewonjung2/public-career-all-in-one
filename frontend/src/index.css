@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Pretendard", system-ui, -apple-system, "Malgun Gothic", sans-serif;
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dbe6ff;
+  --color-brand-500: #2f5fd0;
+  --color-brand-600: #2349a8;
+  --color-brand-700: #1b3780;
+  --color-navy: #0f1e3d;
+}
+
+body { @apply bg-slate-50 text-slate-800 antialiased; }

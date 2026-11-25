@@ -1,0 +1,38 @@
+{
+  "id": "korail-2026H2-general",
+  "company_id": "korail",
+  "company": "한국철도공사",
+  "recruitment_title": "2026년 하반기 한국철도공사 신입사원 채용 공고",
+  "notice_no": "[한국철도공사 2026-17호]",
+  "recruitment_year": 2026,
+  "half": "하반기",
+  "recruitment_type": "신입",
+  "job_category": "(IT 직렬 모집 없음)",
+  "location": null,
+  "headcount": 600,
+  "published_at": "2026-08-07",
+  "status_note": "가장 최근 신입 공고이나 공개경쟁채용은 토목(45명)·전기통신(13명)만 모집하며 사무영업(IT) 모집이 없음. 따라서 IT 직렬 분석은 2026년 상반기 공고를 기준으로 함.",
+  "analysis_supported": false,
+  "official_source": {
+    "url": "https://job.alio.go.kr/recruitview.do?idx=303642",
+    "site": "JOB-ALIO 공공기관 채용정보시스템",
+    "verification_status": "verified",
+    "checked_at": "2026-11-25",
+    "verified_by": "공식 첨부파일 다운로드 후 원문 대조"
+  },
+  "documents": {
+    "notice": {
+      "name": "2026년 하반기 한국철도공사 신입사원 채용 공고문.pdf",
+      "url": "https://www.alio.go.kr/download/download.json?fileNo=3066893",
+      "local_file": "official_documents/korail_2026H2_newhire_notice.pdf"
+    }
+  },
+  "headcount_evidence": {"doc": "notice", "page": 1, "quote": "2026년 하반기 한국철도공사는 신입사원 600명을 채용할 예정이에요."},
+  "evidence": [
+    {"what": "공개경쟁채용 인원", "doc": "notice", "page": 1, "quote": "공개경쟁채용 : 58명"}
+  ],
+  "schedule": [
+    {"type": "접수시작", "date": "2026-08-18", "label": "입사지원서 접수 시작 14:00", "doc": "notice", "page": 4, "quote": "입사지원서 접수 ’26. 8. 18.(화) 14:00"},
+    {"type": "접수마감", "date": "2026-08-21", "label": "입사지원서 접수 마감 14:00", "doc": "notice", "page": 4, "quote": "8. 21.(금) 14:00"}
+  ]
+}

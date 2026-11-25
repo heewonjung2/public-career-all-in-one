@@ -1,0 +1,9 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+pymupdf>=1.24
+httpx>=0.27
+python-multipart>=0.0.9
+pytest>=8.0
+# 선택: AI 구조화 추출 (ANTHROPIC_API_KEY 필요)
+anthropic>=0.60
