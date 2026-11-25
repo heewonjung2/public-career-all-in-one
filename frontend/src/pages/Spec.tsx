@@ -234,9 +234,9 @@ function Simulator() {
 const LEVELS = ['준비 완료', '복습 필요', '준비 중', '보완 필요', '취약', '미시작']
 const NCS = ['의사소통능력', '수리능력', '문제해결능력']
 const MAJOR = ['운영체제', '데이터베이스', '데이터통신', '소프트웨어공학', '정보보호개론', '컴퓨터구조', '자료구조', '알고리즘', '인공지능']
-const COMP = [{ id: 'korail', name: '한국철도공사' }, { id: 'kepco', name: '한국전력공사' }, { id: 'seoulmetro', name: '서울교통공사' }]
+export const COMP = [{ id: 'korail', name: '한국철도공사' }, { id: 'kepco', name: '한국전력공사' }, { id: 'seoulmetro', name: '서울교통공사' }]
 
-function TargetSearch({ onPick, onQuick }: { onPick: (org: string, url: string, title: string) => void; onQuick: (id: string) => void }) {
+export function TargetSearch({ onPick, onQuick }: { onPick: (org: string, url: string, title: string) => void; onQuick: (id: string) => void }) {
   const [q, setQ] = useState('')
   const [res, setRes] = useState<any>(null)
   const [busy, setBusy] = useState(false)

@@ -4,6 +4,8 @@ import { AlertCircle, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown
 import { api } from '../api'
 import { ErrorBox, Loading, today, useApi } from '../components/ui'
 import MiniCalendar, { EVENT_TONE } from '../components/MiniCalendar'
+import { COMP, TargetSearch } from './Spec'
+import { NowActions } from '../components/PlanPanel'
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -59,6 +61,7 @@ export default function Home() {
   const [rm, setRm] = useState<any>(null)
   const [rid, setRid] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [picker, setPicker] = useState(false)
 
   useEffect(() => { api('/active').then((x) => setRid(x.recruitment_id)).catch((e) => setErr(e.message)); api('/roadmaps').then(setRm).catch(() => {}) }, [])
   useEffect(() => {
@@ -68,10 +71,29 @@ export default function Home() {
     api(`/stats/position?recruitment_id=${rid}`).then(setSt).catch(() => {})
   }, [rid])
   const choose = async (id: string) => { await api('/active', { method: 'PUT', json: { recruitment_id: id } }); setRid(id) }
+  const saveProfile = async (np: any) => { const { _updated_at, ...body } = np; profile.setData(await api('/profile', { method: 'PUT', json: body })) }
+  const setPrimary = async (t: any) => {
+    const np = { ...profile.data, primary_company_id: t.company_id }
+    await saveProfile(np)
+    const v = (vers.data?.versions || [])
+    if (t.company_id === 'korail' && v.length && a?.recruitment.company_id !== 'korail') await choose(v[v.length - 1].recruitment_id)
+    setPicker(false)
+  }
+  const addAndSelect = async (t: any) => {
+    const exists = (profile.data.targets || []).some((x: any) => x.company_id === t.company_id)
+    const np = { ...profile.data, targets: exists ? profile.data.targets : [...(profile.data.targets || []), t], primary_company_id: t.company_id }
+    await saveProfile(np)
+    setPicker(false)
+  }
 
   if (err) return <ErrorBox error={`서버에 연결할 수 없습니다 · ${err}`} />
   if (profile.loading || !rid) return <Loading />
   const p = profile.data
+  const targets = [...(p.targets || [])].sort((x: any, y: any) => (x.priority || 99) - (y.priority || 99))
+  const tName = (t: any) => t?.company_name || ({ korail: '한국철도공사', kepco: '한국전력공사', seoulmetro: '서울교통공사' } as any)[t?.company_id] || t?.company_id
+  const primary = targets.find((t: any) => t.company_id === p.primary_company_id) || targets.find((t: any) => t.company_id === a?.recruitment.company_id) || targets[0]
+  const primaryHasRules = !primary || primary.company_id === a?.recruitment.company_id
+  const primaryName = primaryHasRules ? (a?.recruitment.company || tName(primary) || '-') : tName(primary)
   const d = new Date()
   const week = rm ? (rm.weeks.find((w: any) => rm.tasks.some((t: any) => t.week === w.week && !t.done)) || rm.weeks[rm.weeks.length - 1]) : null
   const weekTasks = week ? rm.tasks.filter((t: any) => t.week === week.week) : []
@@ -102,28 +124,56 @@ export default function Home() {
         </section>
 
         {/* 목표 기업 */}
-        <section className="card flex flex-wrap items-center gap-x-6 gap-y-4 px-7 py-6 xl:flex-nowrap">
-          <div className="min-w-0">
-            <span className="rounded-full bg-lav px-3 py-1 text-[12.5px] font-medium text-accent-ink">목표 기업</span>
-            <div className="mt-3 flex items-center gap-3"><CompanyMark name={a?.recruitment.company || '한국철도공사'} size={40} /><span className="whitespace-nowrap text-[19px] font-bold">{a?.recruitment.company || '-'}</span></div>
+        <section className="card px-7 py-6">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-4 xl:flex-nowrap">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-lav px-3 py-1 text-[12.5px] font-medium text-accent-ink">목표 기업</span>
+                <button onClick={() => setPicker(!picker)} className="rounded-full border border-[#D9D0FA] px-2.5 py-0.5 text-[12px] text-accent-ink hover:bg-lav">{picker ? '닫기' : '변경'}</button>
+              </div>
+              <div className="mt-3 flex items-center gap-3"><CompanyMark name={primaryName} size={40} /><span className="whitespace-nowrap text-[19px] font-bold">{primaryName}</span></div>
+            </div>
+            <div className="min-w-0 flex-1 basis-[220px]">
+              <div className="text-[13px] text-sub">지원 직렬</div>
+              <div className="text-[17px] font-bold">{primaryHasRules ? a?.recruitment.job_category || '-' : primary?.job_category || '직렬 미입력'}</div>
+              {primaryHasRules ? (
+                <>
+                  <label className="relative mt-1 block">
+                    <select value={rid} onChange={(e) => choose(e.target.value)} className="w-full appearance-none bg-transparent pr-7 text-[13.5px] font-medium text-accent-ink outline-none">
+                      {(vers.data?.versions || []).map((v: any) => <option key={v.recruitment_id} value={v.recruitment_id}>{v.year}년 {v.type === '사전예고' ? '사전예고 기준' : '확정 공고 기준'}</option>)}
+                    </select>
+                    <ChevronDown size={15} className="pointer-events-none absolute right-0 top-1 text-accent-ink" />
+                  </label>
+                  <div className="mt-0.5 text-[12.5px] text-sub">{preview ? '공식 사전예고 · 최종 공고 아님' : a?.recruitment.status_note ? '마감된 과거 공고 기준' : '확정 공고'}</div>
+                </>
+              ) : (
+                <div className="mt-1 text-[13.5px]"><span className="font-medium text-butter-ink">가점 분석 준비 중</span>{primary?.source_url && <a href={primary.source_url} target="_blank" rel="noreferrer" className="ml-2 text-accent-ink">공식 공고 보기</a>}</div>
+              )}
+            </div>
+            <div className="w-full shrink-0 sm:w-[170px] sm:border-l sm:border-line sm:pl-6">
+              <div className="flex items-baseline gap-2 text-[13px] text-sub">학습 진척 <span className="text-[20px] font-bold text-ink">{rm ? `${rm.progress.percent}%` : '-'}</span></div>
+              <div className="mt-2 h-2 rounded-full bg-lav"><div className="h-2 rounded-full bg-accent" style={{ width: `${rm?.progress.percent || 0}%` }} /></div>
+              <div className="mt-1 text-[11.5px] text-sub">완료한 로드맵 과제 비율</div>
+            </div>
+            <Link to="/spec" className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#D9D0FA] px-4 py-2.5 text-[14px] font-medium text-accent-ink hover:bg-lav">상세 분석 보기 <ArrowRight size={15} /></Link>
           </div>
-          <div className="min-w-0 flex-1 basis-[220px]">
-            <div className="text-[13px] text-sub">지원 직렬</div>
-            <div className="text-[17px] font-bold">{a?.recruitment.job_category || '-'}</div>
-            <label className="relative mt-1 block">
-              <select value={rid} onChange={(e) => choose(e.target.value)} className="w-full appearance-none bg-transparent pr-7 text-[13.5px] font-medium text-accent-ink outline-none">
-                {(vers.data?.versions || []).map((v: any) => <option key={v.recruitment_id} value={v.recruitment_id}>{v.year}년 {v.type === '사전예고' ? '사전예고 기준' : '확정 공고 기준'}</option>)}
-              </select>
-              <ChevronDown size={15} className="pointer-events-none absolute right-0 top-1 text-accent-ink" />
-            </label>
-            <div className="mt-0.5 text-[12.5px] text-sub">{preview ? '공식 사전예고 · 최종 공고 아님' : a?.recruitment.status_note ? '마감된 과거 공고 기준' : '확정 공고'}</div>
-          </div>
-          <div className="w-full shrink-0 sm:w-[170px] sm:border-l sm:border-line sm:pl-6">
-            <div className="flex items-baseline gap-2 text-[13px] text-sub">학습 진척 <span className="text-[20px] font-bold text-ink">{rm ? `${rm.progress.percent}%` : '-'}</span></div>
-            <div className="mt-2 h-2 rounded-full bg-lav"><div className="h-2 rounded-full bg-accent" style={{ width: `${rm?.progress.percent || 0}%` }} /></div>
-            <div className="mt-1 text-[11.5px] text-sub">완료한 로드맵 과제 비율</div>
-          </div>
-          <Link to="/spec" className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#D9D0FA] px-4 py-2.5 text-[14px] font-medium text-accent-ink hover:bg-lav">상세 분석 보기 <ArrowRight size={15} /></Link>
+          {picker && (
+            <div className="mt-5 border-t border-line pt-4">
+              <div className="mb-2 text-[13px] text-sub">내 목표 기업에서 고르기</div>
+              <div className="mb-4 flex flex-wrap gap-2">
+                {targets.map((t: any) => {
+                  const nm = tName(t)
+                  return <button key={t.company_id} onClick={() => setPrimary(t)} className={`rounded-full px-3.5 py-1.5 text-[13.5px] ${t.company_id === primary?.company_id ? 'bg-accent text-white' : 'bg-[#F6F4FC] hover:bg-lav'}`}>{nm}{t.job_category ? ` · ${t.job_category}` : ''}</button>
+                })}
+              </div>
+              <div className="mb-2 text-[13px] text-sub">새 기업 검색해서 추가</div>
+              <TargetSearch
+                onPick={(org: string, url: string, title: string) => addAndSelect({ company_id: COMP.find((c) => c.name === org)?.id || `org:${org}`, company_name: org, job_category: '', recruitment_type: '신입', priority: targets.length + 1, source_url: url, source_title: title })}
+                onQuick={(id: string) => addAndSelect({ company_id: id, company_name: COMP.find((c) => c.id === id)?.name, job_category: '', recruitment_type: '신입', priority: targets.length + 1 })}
+              />
+              <p className="text-[12px] text-sub">직렬은 내 스펙 → 스펙 편집에서 입력할 수 있어요.</p>
+            </div>
+          )}
         </section>
 
         {/* 나의 위치 + 한눈에 보는 결과 */}
@@ -134,7 +184,7 @@ export default function Home() {
               <h2 className="text-[17px] font-bold">나의 위치는?</h2>
               <span className="text-[13px] text-sub">(동일 직렬 준비생 대비)</span><span className="ml-auto rounded-full bg-butter px-2.5 py-0.5 text-[11.5px] font-medium text-butter-ink">시연용 가상 데이터</span>
             </div>
-            {st?.available ? (
+            {primaryHasRules && st?.available ? (
               <div className="mt-3">
                 <Distribution s={st} />
                 <div className="mt-3 grid grid-cols-3 gap-2.5 text-[13px]">
@@ -144,12 +194,12 @@ export default function Home() {
                 </div>
                 <p className="mt-2.5 text-[11.5px] leading-snug text-sub">{st.metric} 기준 · 고정 시드로 만든 가상 준비생과의 비교이며 실제 지원자 순위·합격 가능성이 아니에요.</p>
               </div>
-            ) : <div className="py-10 text-center text-[14px] text-sub">분석 기준을 불러오는 중이에요</div>}
+            ) : <div className="py-10 text-center text-[14px] text-sub">{primaryHasRules ? '분석 기준을 불러오는 중이에요' : `${primaryName}: 가점 분석 준비 중 — 검증된 가점 규칙이 생기면 비교할 수 있어요`}</div>}
           </section>
 
           <section className="rounded-[20px] bg-sage px-6 py-6">
             <h2 className="text-[17px] font-bold">한눈에 보는 결과</h2>
-            {a ? (
+            {a && primaryHasRules ? (
               <ul className="mt-4 space-y-3 text-[14.5px]">
                 <li className="flex items-start gap-2.5">{eligOk ? <CheckCircle2 size={19} className="mt-0.5 shrink-0 text-sage-ink" /> : <AlertCircle size={19} className="mt-0.5 shrink-0 text-butter-ink" />}지원 자격 {eligOk ? '충족' : '확인 필요'}</li>
                 <li className="flex items-start gap-2.5"><CheckCircle2 size={19} className="mt-0.5 shrink-0 text-sage-ink" />자격증 {recog}개 인정 · {b.total_confirmed}점</li>
@@ -157,7 +207,7 @@ export default function Home() {
                 {gaps > 0 && <li className="flex items-start gap-2.5"><AlertCircle size={19} className="mt-0.5 shrink-0 text-butter-ink" />확인할 조건 {gaps}건</li>}
                 {ds?.available && ds.language_points_if_valid != null && <li className="flex items-start gap-2.5"><AlertCircle size={19} className="mt-0.5 shrink-0 text-butter-ink" />어학 응시일 입력 필요</li>}
               </ul>
-            ) : <div className="py-6 text-[14px] text-sub">분석 중</div>}
+            ) : <div className="py-6 text-[14px] text-sub">{primaryHasRules ? '분석 중' : `${primaryName}은(는) 가점 분석 준비 중이에요. 공식 공고 확인과 학습 로드맵은 이용할 수 있어요.`}</div>}
             <Link to="/roadmap" className="mt-5 flex items-center justify-center gap-1.5 rounded-xl border border-[#BFE3CC] bg-white px-4 py-2.5 text-[14px] font-medium text-sage-ink hover:bg-[#f6fbf8]">준비 로드맵 보기 <ArrowRight size={15} /></Link>
           </section>
         </div>
@@ -207,6 +257,7 @@ export default function Home() {
 
       {/* ================= 오른쪽 32% ================= */}
       <aside className="min-w-0 space-y-6">
+        <NowActions />
         <section className="card px-6 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2"><Target size={18} className="text-accent" /><h2 className="text-[17px] font-bold">이번 주 학습 목표</h2></div>

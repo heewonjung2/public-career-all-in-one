@@ -418,6 +418,20 @@ def analyze_posting(req: AnalyzeReq):
         return {"url": req.url, "status": "분석 실패", "message": f"{e.__class__.__name__}: {str(e)[:150]}", "stages": []}
 
 
+@app.get("/api/plan")
+def plan(recruitment_id: str | None = None):
+    from .services import planning
+    rid = recruitment_id or active_rid()
+    rule = RULES.get(rid)
+    if not rule:
+        raise HTTPException(404)
+    p = get_profile()
+    rec = rag.recommend_certs(rule, p)
+    out = planning.build(rule, RULES, p, rec, screening.document_score(rule, p))
+    out["recruitment_id"] = rid
+    return out
+
+
 @app.get("/api/stats/position")
 def stats_position(recruitment_id: str | None = None):
     from .services import stats

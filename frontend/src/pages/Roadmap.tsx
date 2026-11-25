@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, RefreshCw } from 'lucide-react'
 import { api } from '../api'
+import { PlanSection } from '../components/PlanPanel'
 import { ErrorBox, EvidenceToggle, Loading, Note, Section, Sheet, Status, Tabs, btnPrimary, useApi } from '../components/ui'
 
 export default function Roadmap() {
@@ -59,6 +60,7 @@ function Plan() {
         </div>
         <button onClick={create} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-accent bg-white px-5 py-2.5 text-[14.5px] font-semibold text-accent-ink hover:bg-lav"><RefreshCw size={16} className={busy ? 'animate-spin' : ''} />로드맵 다시 만들기</button>
       </div>
+      <PlanSection />
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="order-2 space-y-5 lg:order-1">
           {d.weeks.map((w: any) => {

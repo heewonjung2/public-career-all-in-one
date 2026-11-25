@@ -222,6 +222,69 @@ def detect_certs(q: str, rule: dict) -> list[dict]:
     return uniq
 
 
+def is_recommend_question(q: str) -> bool:
+    return bool(re.search(r"(무슨|어떤|뭘|무엇|뭐).{0,12}(자격증|기사|산업기사|자격)|(자격증|기사).{0,10}(추천|더 따|따면|따야|취득하면|따는 게|따는게)|추천.{0,6}자격증", q))
+
+
+def recommend_certs(rule: dict, profile: dict, top: int = 6, q: str = "") -> dict:
+    """현재 공고·직렬·보유 자격증 기준으로 후보별 '실제 추가 가점'을 엔진으로 계산(가점 시뮬레이터와 동일 엔진)."""
+    from .bonus import in_scope
+    from .screening import document_score
+    sp = rule.get("score_policy") or {}
+    if not sp.get("calculation_verified") or not rule.get("cert_catalog"):
+        return {"answer": {"summary": f"{rule['company']} {rule['job_category']}의 자격증 가점 규칙이 아직 검증되지 않아 추천 점수를 계산할 수 없어요.",
+                           "next": ["공식 공고의 자격증 가산점 표(인정 목록·등급별 점수)", "그룹별·전체 인정 개수와 상한", "자격증 인정 기준일(취득 기준)", "직렬별 적용 범위"]},
+                "citations": [], "items": []}
+    base = engine.calculate_bonus(rule, profile)
+    ds0 = document_score(rule, profile)
+    owned_kinds = {r["kind"] for r in base["rows"] if r.get("kind") and r["status"] not in ("가산대상 목록에 없음",)}
+    job = rule.get("job")
+    seen, items = set(), []
+    for c in rule["cert_catalog"]:
+        key = (c["name"], tuple(c.get("levels", [])))
+        if key in seen or not c.get("evidence_verified", True):
+            continue
+        seen.add(key)
+        if not in_scope(c, job):
+            continue
+        cand = {"name": c["name"], "grade": (c.get("levels") or [""])[0]}
+        new = engine.calculate_bonus(rule, profile, [cand])
+        gain = round(new["total_confirmed"] - base["total_confirmed"], 2)
+        row = next((r for r in new["rows"] if r.get("hypothetical")), {})
+        if gain > 0:
+            reason = f"{row.get('category')} {row.get('grade')} {row.get('points')}점 · 현재 조합에 추가 인정"
+        elif c["kind"] in owned_kinds:
+            reason = "이미 같은 종별 자격증을 보유(동일 종별 최고 1개만 인정)"
+        else:
+            reason = row.get("reason") or row.get("status") or "추가 인정 없음"
+        doc_gain = None
+        if ds0.get("available"):
+            doc_gain = round(gain * ds0["weights"]["multiplier"], 2)
+        items.append({"cert": (c["name"] + (" " + cand["grade"] if cand["grade"] else "")).strip(), "category": c["category"], "grade": c["grade"],
+                      "gain": gain, "doc_gain": doc_gain, "reason": reason, "status": "추천" if gain > 0 else "+0점",
+                      "evidence": {"doc": c["doc"], "page": c["page"], "quote": c["quote"], "verified": c.get("evidence_verified", False)}})
+    if "기사" in q and "기술사" not in q:
+        items = [i for i in items if i["grade"] == "기사"]
+    items.sort(key=lambda x: (-x["gain"], 0 if x["cert"].endswith("기사") else 1, x["cert"]))
+    good = [i for i in items if i["gain"] > 0][:top]
+    zero = [i for i in items if i["gain"] <= 0 and ("기사" in i["cert"])][:3]
+    lines = []
+    for i in good:
+        doc = f" (서류 +{i['doc_gain']}점)" if i["doc_gain"] is not None else ""
+        lines.append(f"{i['cert']} / +{i['gain']}점{doc} / {i['reason']}")
+    lines += [f"{i['cert']} / +0점 / {i['reason']}" for i in zero]
+    unit = "서류 점수에는 자격증 점수×" + str(ds0["weights"]["multiplier"]) + "로 반영" if ds0.get("available") else "필기 우대가점"
+    summary = (f"현재 공고({rule['recruitment_title']}) · {rule['job_category']} · 보유 자격증 기준, 추가로 따면 점수가 오르는 자격증이에요. "
+               f"현재 확정 {base['total_confirmed']}점, {unit}. 같은 그룹 개수 제한·동일 종별·상한이 반영된 실제 증가분입니다.")
+    if not good:
+        summary = "현재 보유 자격증 조합에서는 추가로 점수가 오르는 자격증이 없어요(그룹 제한·상한 도달)."
+    notes = []
+    if rule.get("cert_catalog_note"):
+        notes.append(rule["cert_catalog_note"])
+    notes.append("시험 일정·합격 발표일이 공고의 자격증 인정 기준일 안에 들어오는지는 별도 확인이 필요해요(로드맵 → 공고 일정 계획).")
+    return {"answer": {"summary": summary, "lines": lines, "notes": notes}, "citations": [i["evidence"] for i in good[:3]], "items": items}
+
+
 def is_rule_question(q: str) -> bool:
     return bool(re.search(r"가점|가산|중복|몇 ?점|인정", q))
 
@@ -232,6 +295,12 @@ def ask(conn, q: str, rule: dict, profile: dict, k: int = 4, min_coverage: float
              "official_url": rule["official_source"]["url"], "status_note": rule.get("status_note")}
     hits = search(conn, q, rule["id"], k)
     result = {"scope": scope, "retrieved": [_public(h) for h in hits], "mode": None, "answer": None, "citations": [], "abstained": False}
+
+    # 0) 자격증 추천 질문 → 가점 시뮬레이터(규칙 엔진) 연결. 문서 검색 보류 판단보다 먼저 처리
+    if is_recommend_question(q):
+        rec = recommend_certs(rule, profile, q=q)
+        result.update(mode="simulator", answer=rec["answer"], citations=rec["citations"], recommendations=rec.get("items"))
+        return result
 
     # 1) 규칙 엔진 경로
     if is_rule_question(q) and rule.get("score_policy"):

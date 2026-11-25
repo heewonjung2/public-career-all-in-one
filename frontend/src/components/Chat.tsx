@@ -10,10 +10,11 @@ const SUGGEST = [
   '필기시험 과락 기준은?',
   'NCS 출제 대행사가 공개되어 있어?',
   '내 자격증 중 가점 인정 안 되는 건?',
+  '나 무슨 기사 자격증 더 따는 게 좋아?',
 ]
 const KEY = 'pc-chat-v1'
 const MODE: Record<string, string> = {
-  rule_engine: '가점 규칙 엔진 계산', retrieval_only: '공식 원문 검색 결과', llm_grounded: 'AI 답변 · 인용 검증 통과', abstain: '답변 보류',
+  rule_engine: '가점 규칙 엔진 계산', simulator: '가점 시뮬레이터 계산(현재 공고·내 스펙)', retrieval_only: '공식 원문 검색 결과', llm_grounded: 'AI 답변 · 인용 검증 통과', abstain: '답변 보류',
 }
 
 export default function Chat() {
