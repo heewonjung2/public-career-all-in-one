@@ -24,7 +24,7 @@ CASES = [
     ("철도법령 출제범위 알려줘", "answer", [(R, 36)], None),
     ("필기시험 과락 기준은?", "answer", [(R, 36)], None),
     ("필기 합격자는 몇 배수로 선발해?", "answer", [(R, 36), (N, 4)], None),
-    ("사무영업 IT 채용인원은 몇 명이야?", "answer", [(N, 1)], None),
+    ("사무영업 IT 채용인원은 몇 명이야?", "rule_engine", [(N, 1)], "공고문 1쪽"),
     ("입사지원서 접수 기간은 언제야?", "answer", [(N, 4)], None),
     ("면접시험은 몇 배수로 선발해?", "answer", [(N, 4)], None),
     ("체험형 인턴 수료자 우대 조건은?", "answer", [(N, 3)], None),
@@ -62,7 +62,7 @@ def main():
                 correct = mode == "rule_engine" and (must in text)
             cit_ok = all(ci.get("verified") for ci in a.get("citations", [])) if a.get("citations") else None
             cit_page = any((ci["doc"], ci["page"]) in exp for ci in a.get("citations", [])) if exp and a.get("citations") else None
-            out.append({"q": q, "expected": kind, "mode": mode, "abstained": abst, "top3": got, "recall@3": rec,
+            out.append({"q": q, "answer": (a["answer"] or {}).get("summary"), "details": (a["answer"] or {}).get("lines"), "expected": kind, "mode": mode, "abstained": abst, "top3": got, "recall@3": rec,
                         "citations_verified": cit_ok, "citation_page_match": cit_page, "correct": correct})
     ans = [o for o in out if o["expected"] == "answer"]
     abst = [o for o in out if o["expected"] == "abstain"]
@@ -77,7 +77,8 @@ def main():
         "citation_quote_verified": f"{sum(1 for o in out if o['citations_verified'])}/{sum(1 for o in out if o['citations_verified'] is not None)}",
         "citation_page_match": f"{sum(1 for o in out if o['citation_page_match'])}/{sum(1 for o in out if o['citation_page_match'] is not None)}",
         "avg_latency_ms": round(sum(t_all) / len(t_all), 1),
-        "llm_used": False,
+        "llm_used": __import__("app.services.llm", fromlist=["x"]).model_name() or False,
+        "llm_grounded_answers": f"{sum(1 for o in out if o['mode'] == 'llm_grounded')}/{len(ans)}",
     }
     p = Path(__file__).resolve().parents[2] / "docs" / "rag_eval_results.json"
     p.write_text(json.dumps({"summary": summary, "cases": out}, ensure_ascii=False, indent=1), encoding="utf-8")

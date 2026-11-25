@@ -254,6 +254,15 @@ def ask(conn, q: str, rule: dict, profile: dict, k: int = 4, min_coverage: float
                               "notes": [n["text"] for n in b["interpretation_notes"]]}, citations=_dedupe(cits))
                 return result
 
+    # 1-b) 채용 인원: 표 셀이 흩어져 LLM 인용이 불안정하므로 검증된 규칙 값으로 답변
+    if re.search(r"채용\s?인원|모집\s?인원|몇\s?명", q) and rule.get("analysis_supported", True) and rule.get("headcount") and rule.get("headcount_evidence"):
+        e = rule["headcount_evidence"]
+        loc = f"{rule.get('location')} " if rule.get("location") else ""
+        result.update(mode="rule_engine", answer={"summary": f"{rule['job_category']} 채용 인원은 {loc}{rule['headcount']}명입니다 (검증된 공고 규칙 값).",
+                      "lines": [f"공고문 1쪽 채용 인원표 '{rule['job_category']}' 행 기준"]},
+                      citations=[{"doc": e["doc"], "page": e["page"], "quote": e["quote"], "verified": e.get("evidence_verified", False)}])
+        return result
+
     # 2) 검색 충분성 판단
     if not hits or hits[0]["coverage"] < min_coverage:
         result.update(mode="abstain", abstained=True, answer={"summary": NO_ANSWER,
@@ -261,10 +270,11 @@ def ask(conn, q: str, rule: dict, profile: dict, k: int = 4, min_coverage: float
         return result
 
     # 3) LLM 답변 (키가 있을 때만)
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    from . import llm
+    if llm.provider():
         return _llm_answer(q, rule, hits, result)
 
-    result.update(mode="retrieval_only", answer={"summary": "AI 답변 생성 미사용(ANTHROPIC_API_KEY 미설정). 질문과 관련된 공식 원문 검색 결과입니다.",
+    result.update(mode="retrieval_only", answer={"summary": "AI 답변 생성 미사용(LLM API 키 미설정). 질문과 관련된 공식 원문 검색 결과입니다.",
                   "lines": hits[0]["best_lines"]},
                   citations=[{"doc": h["doc_key"], "page": h["page_number"], "quote": h["best_lines"][0] if h["best_lines"] else "", "verified": True}
                              for h in hits[:3] if h["best_lines"]])
@@ -287,29 +297,85 @@ def _dedupe(cits):
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "rag_chat.md"
 
 
-def _llm_answer(q, rule, hits, result):
-    import anthropic
-    ctx = "\n".join(f"<chunk id=\"{h['id']}\" doc=\"{h['doc_key']}\" page=\"{h['page_number']}\">\n{h['text']}\n</chunk>" for h in hits)
-    user = (f"분석 대상: {rule['company']} / {rule['job_category']} / {rule['recruitment_title']} ({rule.get('published_at')})\n"
-            f"<search_results>\n{ctx}\n</search_results>\n\n질문: {q}")
-    try:
-        resp = anthropic.Anthropic().messages.create(model="claude-opus-5-5", max_tokens=4000, system=PROMPT_PATH.read_text(encoding="utf-8"),
-                                                     output_config={"effort": "low"}, messages=[{"role": "user", "content": user}])
-        text = "".join(b.text for b in resp.content if b.type == "text").strip().strip("`")
-        if text.startswith("json"):
-            text = text[4:]
-        data = json.loads(text)
-    except Exception as e:  # noqa: BLE001
-        result.update(mode="abstain", abstained=True, answer={"summary": f"AI 호출 또는 응답 형식 오류로 답변을 보류합니다 ({e.__class__.__name__})."})
-        return result
-    by_id = {h["id"]: h for h in hits}
+OTHER_SCOPE = ["지역인재", "지방대학", "거주지", "보훈", "장애인", "제한경쟁", "고졸", "열차승무", "차량", "토목", "건축", "전기통신", "관제", "무선제어", "운전", "문산"]
+
+_CHARMAP = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"', "∼": "~", "～": "~", "〜": "~", "ㆍ": "·", "•": "·", "－": "-", "–": "-", "—": "-"})
+
+
+def quote_in_chunk(quote: str, chunk: str) -> bool:
+    """엄격한 원문 존재 검증: 공백 제거 + 따옴표·물결표 등 표기 통일만 허용.
+    말줄임(…, ...)으로 나뉜 인용은 각 조각(4자 이상)이 모두 원문에 있어야 통과."""
+    src = normalize(chunk.translate(_CHARMAP))
+    parts = [p for p in re.split(r"…|\.\.\.", (quote or "").translate(_CHARMAP)) if len(normalize(p)) >= 4]
+    return bool(parts) and all(normalize(p) in src for p in parts)
+
+
+def _verify(data, by_id):
     cits, ok = [], True
-    for c in data.get("citations", []):
-        h = by_id.get(c.get("chunk_id"))
-        verified = bool(h) and normalize(c.get("quote", "")) in normalize(h["text"])
+    for c in data.get("citations", []) or []:
+        try:
+            h = by_id.get(int(c.get("chunk_id")))
+        except (TypeError, ValueError):
+            h = None
+        verified = bool(h) and quote_in_chunk(c.get("quote", ""), h["text"])
         ok &= verified
         if h:
             cits.append({"doc": h["doc_key"], "page": h["page_number"], "quote": c.get("quote", ""), "verified": verified})
+        else:
+            ok = False
+    return cits, ok
+
+
+def _llm_answer(q, rule, hits, result):
+    from . import llm
+    ctx = "\n".join(f"<chunk id=\"{h['id']}\" doc=\"{h['doc_key']}\" page=\"{h['page_number']}\">\n{h['text']}\n</chunk>" for h in hits)
+    status = " (접수 마감된 과거 공고)" if rule.get("status_note") else ""
+    user = (f"분석 대상: {rule['company']} / {rule['job_category']} / {rule['recruitment_title']} ({rule.get('published_at')}){status}\n"
+            f"<search_results>\n{ctx}\n</search_results>\n\n질문: {q}")
+    system = PROMPT_PATH.read_text(encoding="utf-8")
+    by_id = {h["id"]: h for h in hits}
+    result["model"] = llm.model_name()
+    result["attempts"] = 0
+    cits, ok, data = [], False, {}
+    for attempt in range(2):  # 인용 검증 실패 시 1회만 재요청(검증 기준은 완화하지 않음)
+        prompt = user if attempt == 0 else (
+            user + "\n\n[재요청] 직전 답변의 인용문 일부가 chunk 원문과 글자 단위로 일치하지 않았습니다. "
+                   "quote 는 chunk 텍스트에서 연속된 한 줄을 그대로 복사하세요(요약·말줄임·표 행 합치기 금지).")
+        try:
+            data = llm.complete_json(system, prompt)
+        except llm.LLMError as e:
+            result.update(mode="abstain", abstained=True, answer={"summary": f"AI 호출 또는 응답 형식 오류로 답변을 보류합니다 ({e})."})
+            return result
+        result["attempts"] = attempt + 1
+        cits, ok = _verify(data, by_id)
+        if data.get("unanswerable") or (cits and ok):
+            break
+    # 범위 가드(코드): 인용문이 질문하지 않은 다른 전형·직렬에 관한 문장이면 보류
+    if not data.get("unanswerable") and cits and ok:
+        foreign = sorted({t for c in cits for t in OTHER_SCOPE if t in c["quote"] and t not in q and t not in rule.get("job_category", "")})
+        if foreign:
+            result.update(mode="abstain", abstained=True, citations=cits,
+                          answer={"summary": f"인용된 원문이 다른 전형·직렬({', '.join(foreign)})에 관한 내용이라 이 직렬의 근거로 쓰지 않고 답변을 보류합니다. " + NO_ANSWER,
+                                  "next": ["공식 공고문 지원자격 표 직접 확인", "기관 채용 담당 부서 문의"]})
+            result["scope_guard"] = foreign
+            return result
+    # 인용문 '존재'만으로는 부족: 인용문이 답변의 핵심 주장을 직접 뒷받침하는지 별도 판정
+    if not data.get("unanswerable") and cits and ok:
+        judge_sys = ("당신은 근거 검증기다. 주어진 인용문들만 읽고, 답변의 핵심 주장이 인용문에 의해 '직접' 뒷받침되는지 판정한다. "
+                     "인용문이 다른 대상(다른 직렬·다른 전형·지역인재 등)에 관한 내용이거나 추론이 필요하면 supported=false. "
+                     'JSON만 출력: {"supported": boolean, "reason": string}')
+        judge_user = f"질문: {q}\n답변: {data.get('answer', '')}\n인용문:\n" + "\n".join(f"- {c['quote']}" for c in cits)
+        try:
+            j = llm.complete_json(judge_sys, judge_user, max_tokens=300)
+            result["support_check"] = {"supported": bool(j.get("supported")), "reason": j.get("reason", "")}
+        except llm.LLMError as e:
+            result["support_check"] = {"supported": False, "reason": f"판정 실패: {e}"}
+        if not result["support_check"]["supported"]:
+            result.update(mode="abstain", abstained=True, citations=cits,
+                          answer={"summary": "검색된 인용문이 답변을 직접 뒷받침하지 않아 답변을 보류합니다. " + NO_ANSWER,
+                                  "notes": [f"검증기 판단: {result['support_check']['reason']}"],
+                                  "next": ["공식 공고문 지원자격 표 직접 확인", "기관 채용 담당 부서 문의"]})
+            return result
     if data.get("unanswerable") or not cits or not ok:
         result.update(mode="abstain", abstained=True, answer={"summary": NO_ANSWER if data.get("unanswerable") or not cits else "AI 답변의 인용문이 검색된 공식 원문과 일치하지 않아 답변을 보류합니다."}, citations=cits)
         return result
