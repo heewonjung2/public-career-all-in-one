@@ -4,7 +4,7 @@ import { ArrowUpRight, RefreshCw, Upload } from 'lucide-react'
 import { api } from '../api'
 import { Empty, ErrorBox, EvidenceToggle, Loading, Note, Section, Sheet, Status, Tabs, btnLine, btnPrimary, btnSoft, input, link, useApi } from '../components/ui'
 
-function CompanySearch() {
+function CompanySearch({ recent, onOpen }: { recent: any[]; onOpen: (id: string) => void }) {
   const [q, setQ] = useState(() => new URLSearchParams(window.location.search).get('q') || '')
   const [res, setRes] = useState<any>(null)
   const [busy, setBusy] = useState(false)
@@ -23,12 +23,24 @@ function CompanySearch() {
   return (
     <section className="card mb-8 px-7 py-6">
       <h1 className="text-[22px] font-bold">공공기관 채용공고 검색</h1>
-      <p className="mt-1 text-[13.5px] text-sub">JOB-ALIO·ALIO·클린아이 공식 사이트에서 찾고, 실제 공고 페이지를 열어 기관명·제목을 다시 확인해요.</p>
       <form onSubmit={go} className="mt-4 flex gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="기관명을 입력하세요 (예: 한국수자원공사, 인천교통공사)" className={`${input} !py-3 !text-[15px]`} />
-        <button className={`${btnPrimary} !rounded-xl !px-6`} disabled={busy || !q.trim()}>{busy ? '검색 중…' : '검색'}</button>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="기관명을 입력하세요 (예: 한국수자원공사)" className={`${input} min-w-0 flex-1 !py-3 !text-[15px]`} />
+        <button className={`${btnPrimary} shrink-0 whitespace-nowrap !rounded-xl !px-6`} disabled={busy || !q.trim()}>{busy ? '검색 중…' : '검색'}</button>
       </form>
-      {busy && <p className="mt-3 text-[13px] text-sub">공식 채용 사이트에서 공고를 찾고 각 공고 페이지를 확인하는 중이에요.</p>}
+      {!res && recent.length > 0 && (
+        <div className="mt-5">
+          <div className="mb-2 text-[14px] font-semibold">최근 채용공고</div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {recent.map((r) => (
+              <button key={r.id} onClick={() => onOpen(r.id)} className="rounded-2xl border border-line bg-white px-4 py-3.5 text-left transition hover:border-[#D9D0FA] hover:bg-[#FBFAFF]">
+                <div className="text-[12.5px] text-sub">{r.company}</div>
+                <div className="mt-0.5 line-clamp-2 text-[14px] font-medium leading-snug">{r.recruitment_title}</div>
+                <div className="mt-1.5 text-[12px] text-sub">게시일 {r.published_at}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {res && (
         <div className="mt-5">
           <div className="mb-2 text-[13px] text-sub">{res.status}{res.cached ? ' · 저장된 검색 결과' : ''}{res.elapsed_s ? ` · ${res.elapsed_s}초` : ''}</div>
@@ -89,7 +101,7 @@ export default function Jobs() {
 
   return (
     <>
-    <CompanySearch />
+    <CompanySearch recent={[...list].sort((x, y) => String(y.published_at).localeCompare(String(x.published_at))).slice(0, 4)} onOpen={(rid) => { const n = new URLSearchParams(sp); n.set('id', rid); n.set('tab', 'overview'); setSp(n); setTimeout(() => document.getElementById('posting-detail')?.scrollIntoView({ behavior: 'smooth' }), 50) }} />
     <div className="grid gap-x-16 gap-y-10 lg:grid-cols-[300px_minmax(0,1fr)]">
       <aside>
         <div className="mb-4 text-[13px] text-sub">검증 완료 공고 (가점 계산 가능)</div>
@@ -104,7 +116,7 @@ export default function Jobs() {
         </div>
         <div className="mt-8 px-4 text-[12.5px] leading-relaxed text-sub">위 검색으로 찾은 다른 기관 공고는 AI 추출 후 검토가 필요해 아직 자동 가점 계산에 쓰이지 않아요.</div>
       </aside>
-      <div>
+      <div id="posting-detail" className="scroll-mt-24">
         <Tabs tabs={[{ key: 'overview', label: '공고 개요' }, { key: 'changes', label: '변경 이력' }, { key: 'register', label: '원문 등록' }]} value={tab} onChange={(k) => set('tab', k)} />
         {tab === 'overview' && <Overview id={id} />}
         {tab === 'changes' && <Changes id={id} />}
