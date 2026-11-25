@@ -1,0 +1,17 @@
+{
+  "note": "ALIO·클린아이 목록 밖이지만 공식 출처(기관 공식 홈페이지)로 존재와 명칭을 확인한 기관. 추가 시 official_url과 checked_at을 반드시 기재.",
+  "institutions": [
+    {"name": "금융감독원", "group": "기타 공공기관", "source": "기관 공식 홈페이지", "official_url": "https://www.fss.or.kr", "checked_at": "2026-11-25",
+     "aliases": ["금감원", "FSS", "Financial Supervisory Service"]}
+  ],
+  "aliases": {
+    "posa": "(재)한국우편사업진흥원",
+    "우편사업진흥원": "(재)한국우편사업진흥원",
+    "공항공사": ["한국공항공사", "인천국제공항공사"],
+    "도시철도": ["대구교통공사", "서울교통공사", "인천교통공사"],
+    "khnp": "한국수력원자력(주)",
+    "korea hydro & nuclear power": "한국수력원자력(주)",
+    "korea railroad": "한국철도공사",
+    "korea electric power": "한국전력공사"
+  }
+}
